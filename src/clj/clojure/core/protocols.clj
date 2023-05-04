@@ -6,7 +6,10 @@
 ;   the terms of this license.
 ;   You must not remove this notice, or any other, from this software.
 
-(ns clojure.core.protocols)
+(ns clojure.core.protocols
+  (:import [java.util Optional]
+           [java.util.stream Stream]
+           [java.util.function BinaryOperator]))
 
 (set! *warn-on-reflection* true)
 
@@ -72,6 +75,11 @@
     (.reduce ^clojure.lang.IReduceInit coll f val)
     (naive-seq-reduce coll f val)))
 
+(defn- bioperator [f]
+  (reify BinaryOperator
+    (apply [_ l r]
+      (f l r))))
+
 (extend-protocol CollReduce
   nil
   (coll-reduce
@@ -119,7 +127,19 @@
   clojure.lang.APersistentMap$ValSeq
   (coll-reduce
     ([coll f] (iter-reduce coll f))
-    ([coll f val] (iter-reduce coll f val))))
+    ([coll f val] (iter-reduce coll f val)))
+
+  ;;for Stream
+  Stream
+  (coll-reduce
+    ([^Stream stream f]
+     (let [op (bioperator f)
+           ^Optional ret (.reduce stream op)]
+       (when (.isPresent ret)
+         (.get ret))))
+    ([^Stream stream f val]
+     (let [op (bioperator f)]
+       (.reduce stream val op)))))
 
 (extend-protocol InternalReduce
   nil
