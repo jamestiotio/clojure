@@ -9,7 +9,20 @@
 (ns clojure.java.stream
   "The lib stream includes functions for bridging the gap between Java streams
   and Clojure functions and collections."
-  (:import [java.util.stream Stream BaseStream]))
+  (:import [java.util.stream Stream BaseStream]
+           [java.util.function BinaryOperator]))
+
+(defn- bioperator [f]
+  (reify BinaryOperator
+    (apply [_ l r]
+      (f l r))))
+
+(defn- stream-reduce!
+  ([f val ^Stream stream]
+   (if stream
+     (let [op (bioperator f)]
+       (.reduce stream val op))
+     val)))
 
 (set! *warn-on-reflection* true)
 
@@ -25,5 +38,5 @@
   for the stream given."
   [coll ^Stream stream]
   (if (instance? clojure.lang.IEditableCollection coll)
-    (with-meta (persistent! (reduce conj! (transient coll) stream)) (meta coll))
-    (reduce conj coll stream)))
+    (with-meta (persistent! (stream-reduce! conj! (transient coll) stream)) (meta coll))
+    (stream-reduce! conj coll stream)))

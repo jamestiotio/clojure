@@ -12,30 +12,24 @@
   (:import [java.util.stream Stream]
            [java.util.function Supplier]))
 
-(deftest stream-reduce-test
-  (let [^Stream stream (.stream ["a" "b" "c" "d"])]
-    (is (= ["a" "b" "c" "d"] (reduce conj [] stream))))
-
-  (let [^Stream stream (.stream ["a" "b" "c" "d"])]
-    (is (= "abcd" (reduce str stream))))
-
-  (let [^Stream stream (.stream [])]
-    (is (nil? (reduce str stream)))))
-
 (deftest stream-seq!-test
-  (let [one (Stream/of "a")
-        n   (.stream ["a" "b" "c"])
-	inf (Stream/generate (reify Supplier (get [_] 42)))
-        st  (jstream/stream-seq! one)]
+  (let [none (.stream [])
+        one  (Stream/of "a")
+        n    (.stream ["a" "b" "c"])
+	inf  (Stream/generate (reify Supplier (get [_] 42)))
+        st   (jstream/stream-seq! one)]
+    (is (empty? (map identity (jstream/stream-seq! none))))
     (is (seq? st))
     (is (= ["a"] (map identity st)))
     (is (= ["a" "b" "c"] (map identity (jstream/stream-seq! n))))
     (is (= [42 42 42 42 42] (take 5 (jstream/stream-seq! inf))))))
 
 (deftest stream-into!-test
-  (let [one (Stream/of "a")
-        n   (.stream ["a" "b" "c"])
-        inf (Stream/generate (reify Supplier (get [_] 42)))]
+  (let [none (.stream [])
+        one  (Stream/of "a")
+        n    (.stream ["a" "b" "c"])
+        inf  (Stream/generate (reify Supplier (get [_] 42)))]
+    (is (empty? (jstream/stream-into! [] none)))
     (is (= ["a"] (jstream/stream-into! [] one)))
     (is (= ["a" "b" "c"] (jstream/stream-into! [] n)))
     (is (= [] (jstream/stream-into! [] nil)))
