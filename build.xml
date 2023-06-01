@@ -81,7 +81,6 @@
       <arg value="clojure.java.browse-ui"/>
       <arg value="clojure.java.basis.impl"/>
       <arg value="clojure.java.basis"/>
-      <arg value="clojure.java.stream"/>
       <arg value="clojure.string"/>
       <arg value="clojure.data"/>
       <arg value="clojure.reflect"/>

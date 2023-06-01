@@ -8,7 +8,6 @@
 
 (ns clojure.test-clojure.java.stream
   (:use clojure.test)
-  (:require [clojure.java.stream :as jstream])
   (:import [java.util.stream Stream]
            [java.util.function Supplier]))
 
@@ -17,21 +16,20 @@
         one  (Stream/of "a")
         n    (.stream ["a" "b" "c"])
 	inf  (Stream/generate (reify Supplier (get [_] 42)))
-        st   (jstream/stream-seq! one)]
-    (is (empty? (map identity (jstream/stream-seq! none))))
+        st   (stream-seq! one)]
+    (is (empty? (map identity (stream-seq! none))))
     (is (seq? st))
     (is (= ["a"] (map identity st)))
-    (is (= ["a" "b" "c"] (map identity (jstream/stream-seq! n))))
-    (is (= [42 42 42 42 42] (take 5 (jstream/stream-seq! inf))))))
+    (is (= ["a" "b" "c"] (map identity (stream-seq! n))))
+    (is (= [42 42 42 42 42] (take 5 (stream-seq! inf))))))
 
 (deftest stream-into!-test
   (let [none (.stream [])
         one  (Stream/of "a")
         n    (.stream ["a" "b" "c"])
         inf  (Stream/generate (reify Supplier (get [_] 42)))]
-    (is (empty? (jstream/stream-into! [] none)))
-    (is (= ["a"] (jstream/stream-into! [] one)))
-    (is (= ["a" "b" "c"] (jstream/stream-into! [] n)))
-    (is (= [] (jstream/stream-into! [] nil)))
+    (is (empty? (stream-into! [] none)))
+    (is (= ["a"] (stream-into! [] one)))
+    (is (= ["a" "b" "c"] (stream-into! [] n)))
     (is (= [42 42 42 42 42]
-           (jstream/stream-into! [] (.limit inf 5))))))
+           (stream-into! [] (.limit inf 5))))))

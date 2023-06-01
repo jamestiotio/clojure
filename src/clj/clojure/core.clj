@@ -8161,3 +8161,30 @@ fails, attempts to require sym's namespace and retries."
    :added "1.11"}
   [^double num]
   (Double/isInfinite num))
+
+(import '[java.util.stream Stream BaseStream]
+        '[java.util.function BinaryOperator])
+
+(defn stream-seq!
+  "Takes a java.util.stream.BaseStream instance s and returns a seq of its contents.
+  This operation is a terminal operation for the stream given."
+  {:added "1.12"}
+  [^BaseStream stream]
+  (iterator-seq (.iterator stream)))
+
+(defn stream-into!
+  "Returns a new coll consisting of coll with all of the items of the
+  java.util.stream.Stream stream conjoined. This operation is a terminal operation
+  for the stream given. The stream provided defines the encounter order of the
+  elements conjoined into the result."
+  {:added "1.12"}
+  [coll ^Stream stream]
+  (if (instance? clojure.lang.IEditableCollection coll)
+    (with-meta (persistent! (.reduce stream
+                                     (transient coll)
+                                     (reify BinaryOperator
+                                       (apply [_ l r] (conj! l r)))))
+      (meta coll))
+    (.reduce stream coll
+             (reify BinaryOperator
+               (apply [_ l r] (conj l r))))))
