@@ -8163,7 +8163,7 @@ fails, attempts to require sym's namespace and retries."
   (Double/isInfinite num))
 
 (import '[java.util.stream Stream BaseStream]
-        '[java.util.function BinaryOperator])
+        '[java.util.function BiFunction BinaryOperator])
 
 (defn stream-seq!
   "Takes a java.util.stream.BaseStream instance s and returns a seq of its contents.
@@ -8179,12 +8179,21 @@ fails, attempts to require sym's namespace and retries."
   elements conjoined into the result."
   {:added "1.12"}
   [coll ^Stream stream]
-  (if (instance? clojure.lang.IEditableCollection coll)
-    (with-meta (persistent! (.reduce stream
-                                     (transient coll)
-                                     (reify BinaryOperator
-                                       (apply [_ l r] (conj! l r)))))
-      (meta coll))
-    (.reduce stream coll
-             (reify BinaryOperator
-               (apply [_ l r] (conj l r))))))
+  (let []
+    (if (.isParallel stream)
+      (.reduce stream coll
+               (reify BiFunction
+                 (apply [_ l r] (conj l r)))
+               (reify BinaryOperator
+                 (apply [_ l r] (into l r))))
+      (if (instance? clojure.lang.IEditableCollection coll)
+        (with-meta (persistent! (.reduce stream
+                                         (transient coll)
+                                         (reify BinaryOperator
+                                           (apply [_ l r] (conj! l r)))))
+          (meta coll))
+        (.reduce stream coll
+                 (reify BiFunction
+                   (apply [_ l r] (conj l r)))
+                 (reify BinaryOperator
+                   (apply [_ l r] (into l r))))))))

@@ -8,7 +8,7 @@
 
 (ns clojure.test-clojure.java.stream
   (:use clojure.test)
-  (:import [java.util.stream Stream]
+  (:import [java.util.stream Stream LongStream]
            [java.util.function Supplier]))
 
 (deftest stream-seq!-test
@@ -27,9 +27,12 @@
   (let [none (.stream [])
         one  (Stream/of "a")
         n    (.stream ["a" "b" "c"])
-        inf  (Stream/generate (reify Supplier (get [_] 42)))]
+        inf  (Stream/generate (reify Supplier (get [_] 42)))
+        par  (-> (LongStream/rangeClosed 1 10) .boxed .parallel)]
     (is (empty? (stream-into! [] none)))
     (is (= ["a"] (stream-into! [] one)))
     (is (= ["a" "b" "c"] (stream-into! [] n)))
     (is (= [42 42 42 42 42]
-           (stream-into! [] (.limit inf 5))))))
+           (stream-into! [] (.limit inf 5))))
+    (is (= [1 2 3 4 5 6 7 8 9 10]
+           (stream-into! [] par)))))
