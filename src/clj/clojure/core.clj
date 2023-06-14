@@ -8163,7 +8163,60 @@ fails, attempts to require sym's namespace and retries."
   (Double/isInfinite num))
 
 (import '[java.util.stream Stream BaseStream]
-        '[java.util.function BiFunction BinaryOperator])
+        '[java.util.function BiFunction BinaryOperator Consumer])
+
+(deftype StreamAccumulator [^:unsynchronized-mutable acc ^:unsynchronized-mutable done? rf]
+  java.util.function.Consumer
+  (accept [_ obj]
+    (when (not done?)     
+      (let [result (rf acc obj)]
+        (if (reduced? result)
+          (do
+            (set! done? true)
+            (set! acc @result))
+          (set! acc result)))))
+  clojure.lang.IDeref
+  (deref [_] acc))
+
+(deftype StreamValueSlot [^:unsynchronized-mutable v]
+  java.util.function.Consumer
+  (accept [_ obj]
+    (set! v obj))
+  clojure.lang.IDeref
+  (deref [_] v))
+
+(defn stream-reduce!
+  "f should be a function of 2 arguments. If val is not supplied,
+  returns the result of applying f to the first 2 items in stream, then
+  applying f to that result and the 3rd item, etc. If stream contains no
+  items, f must accept no arguments as well, and stream-reduce! returns the
+  result of calling f with no arguments.  If stream has only 1 item, it
+  is returned and f is not called.  If val is supplied, returns the
+  result of applying f to val and the first item in stream, then
+  applying f to that result and the 2nd item, etc. If stream contains no
+  items, returns val and f is not called.
+
+  This operation is a terminal operation for the stream given."
+  {:added "1.12"}
+  ([f ^BaseStream stream]
+   (let [sp (.spliterator stream)
+         current (->StreamValueSlot nil)]
+     (if (.tryAdvance sp current)
+       (let [first @current]
+         (if (.tryAdvance sp current)
+           (let [second @current
+                 result (f first second)]
+             (if (reduced? result)
+               @result
+               (let [acc (->StreamAccumulator result false f)]
+                 (.forEachRemaining sp acc)
+                 @acc)))
+           first))
+       (f))))
+  ([f val ^BaseStream stream]
+   (let [acc (->StreamAccumulator val false f)]
+     (.forEachRemaining (.spliterator stream) acc)
+     @acc)))
 
 (defn stream-seq!
   "Takes a java.util.stream.BaseStream instance s and returns a seq of its contents.
@@ -8179,21 +8232,4 @@ fails, attempts to require sym's namespace and retries."
   elements conjoined into the result."
   {:added "1.12"}
   [coll ^Stream stream]
-  (let []
-    (if (.isParallel stream)
-      (.reduce stream coll
-               (reify BiFunction
-                 (apply [_ l r] (conj l r)))
-               (reify BinaryOperator
-                 (apply [_ l r] (into l r))))
-      (if (instance? clojure.lang.IEditableCollection coll)
-        (with-meta (persistent! (.reduce stream
-                                         (transient coll)
-                                         (reify BinaryOperator
-                                           (apply [_ l r] (conj! l r)))))
-          (meta coll))
-        (.reduce stream coll
-                 (reify BiFunction
-                   (apply [_ l r] (conj l r)))
-                 (reify BinaryOperator
-                   (apply [_ l r] (into l r))))))))
+)
