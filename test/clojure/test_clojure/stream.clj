@@ -6,10 +6,37 @@
 ;   the terms of this license.
 ;   You must not remove this notice, or any other, from this software.
 
-(ns clojure.test-clojure.java.stream
+(ns clojure.test-clojure.stream
   (:use clojure.test)
   (:import [java.util.stream Stream LongStream]
-           [java.util.function Supplier]))
+           [java.util.function Consumer Predicate Supplier]))
+
+(deftest test-stream-reduce!
+  (is (= :only-val (stream-reduce! + (.stream [:only-val]))))
+  (is (= 0 (stream-reduce! + (.stream []))))
+  (is (= 5 (stream-reduce! + (.stream [1 4]))))
+  (is (= 6 (stream-reduce! + (.stream [1 2 3]))))
+  (is (= [2 3 4]
+         (stream-reduce! (fn [v i] (conj v (inc i)))
+                         []
+                         (.stream [1 2 3]))))
+
+  (is (= 15 (stream-reduce! + (LongStream/rangeClosed 1 5))))
+
+  (is (= 9 (stream-reduce! + (-> (Stream/of (to-array [1 2 3 4 5]))
+                                 (.filter (reify Predicate (test [_ v] (odd? v)))))))))
+
+(deftest test-stream-reduced!
+  (is (= 5 (stream-reduce!
+            (fn [x y] (reduced (+ x y)))
+            (.stream [1 4]))))
+
+    (is (= 45 (stream-reduce!
+               (fn [acc v]
+                 (if (= v 10)
+                   (reduced acc)
+                   (+ acc v)))
+               (LongStream/rangeClosed 1 10)))))
 
 (deftest stream-seq!-test
   (let [none (.stream [])

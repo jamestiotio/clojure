@@ -8195,23 +8195,22 @@ fails, attempts to require sym's namespace and retries."
   result of applying f to val and the first item in stream, then
   applying f to that result and the 2nd item, etc. If stream contains no
   items, returns val and f is not called.
-
   This operation is a terminal operation for the stream given."
   {:added "1.12"}
   ([f ^BaseStream stream]
    (let [sp (.spliterator stream)
          current (->StreamValueSlot nil)]
      (if (.tryAdvance sp current)
-       (let [first @current]
+       (let [head @current]
          (if (.tryAdvance sp current)
            (let [second @current
-                 result (f first second)]
+                 result (f head second)]
              (if (reduced? result)
                @result
                (let [acc (->StreamAccumulator result false f)]
                  (.forEachRemaining sp acc)
                  @acc)))
-           first))
+           head))
        (f))))
   ([f val ^BaseStream stream]
    (let [acc (->StreamAccumulator val false f)]
@@ -8227,9 +8226,10 @@ fails, attempts to require sym's namespace and retries."
 
 (defn stream-into!
   "Returns a new coll consisting of coll with all of the items of the
-  java.util.stream.Stream stream conjoined. This operation is a terminal operation
-  for the stream given. The stream provided defines the encounter order of the
-  elements conjoined into the result."
+  stream conjoined. This operation is a terminal operation for the stream
+  given."
   {:added "1.12"}
-  [coll ^Stream stream]
-)
+  [coll ^BaseStream stream]
+  (if (instance? clojure.lang.IEditableCollection coll)
+    (with-meta (persistent! (stream-reduce! conj! (transient coll) stream)) (meta coll))
+    (stream-reduce! conj coll stream)))
