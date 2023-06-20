@@ -8178,13 +8178,6 @@ fails, attempts to require sym's namespace and retries."
   clojure.lang.IDeref
   (deref [_] acc))
 
-(deftype StreamValueSlot [^:unsynchronized-mutable v]
-  java.util.function.Consumer
-  (accept [_ obj]
-    (set! v obj))
-  clojure.lang.IDeref
-  (deref [_] v))
-
 (defn stream-reduce!
   "f should be a function of 2 arguments. If val is not supplied,
   returns the result of applying f to the first 2 items in stream, then
@@ -8195,11 +8188,16 @@ fails, attempts to require sym's namespace and retries."
   result of applying f to val and the first item in stream, then
   applying f to that result and the 2nd item, etc. If stream contains no
   items, returns val and f is not called.
+
+  If f returns a result wrapped with reduced then stream-reduce! will stop
+  processing the stream elements with f, but will visit each subsequent element
+  in turn.
+
   This operation is a terminal operation for the stream given."
   {:added "1.12"}
   ([f ^BaseStream stream]
    (let [sp (.spliterator stream)
-         current (->StreamValueSlot nil)]
+         current (->StreamAccumulator nil true #(do %1 %2))]
      (if (.tryAdvance sp current)
        (let [head @current]
          (if (.tryAdvance sp current)

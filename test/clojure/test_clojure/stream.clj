@@ -43,12 +43,14 @@
         one  (Stream/of "a")
         n    (.stream ["a" "b" "c"])
 	inf  (Stream/generate (reify Supplier (get [_] 42)))
-        st   (stream-seq! one)]
+        st   (stream-seq! one)
+        l100 (LongStream/range 0 100)]
     (is (empty? (map identity (stream-seq! none))))
     (is (seq? st))
     (is (= ["a"] (map identity st)))
     (is (= ["a" "b" "c"] (map identity (stream-seq! n))))
-    (is (= [42 42 42 42 42] (take 5 (stream-seq! inf))))))
+    (is (= [42 42 42 42 42] (take 5 (stream-seq! inf))))
+    (is (= 4950 (reduce + (stream-seq! l100)))) 4950))
 
 (deftest stream-into!-test
   (let [none (.stream [])
