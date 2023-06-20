@@ -8162,17 +8162,17 @@ fails, attempts to require sym's namespace and retries."
   [^double num]
   (Double/isInfinite num))
 
-(import '[java.util.stream Stream BaseStream]
-        '[java.util.function BiFunction BinaryOperator Consumer])
+(import '[java.util.stream BaseStream]
+        '[java.util.function Consumer])
 
-(deftype StreamAccumulator [^:unsynchronized-mutable acc ^:unsynchronized-mutable done? rf]
+(deftype StreamAccumulator [^:unsynchronized-mutable acc ^:unsynchronized-mutable continue? rf]
   java.util.function.Consumer
   (accept [_ obj]
-    (when (not done?)     
+    (when continue?
       (let [result (rf acc obj)]
         (if (reduced? result)
           (do
-            (set! done? true)
+            (set! continue? false)
             (set! acc @result))
           (set! acc result)))))
   clojure.lang.IDeref
@@ -8207,13 +8207,13 @@ fails, attempts to require sym's namespace and retries."
                  result (f head second)]
              (if (reduced? result)
                @result
-               (let [acc (->StreamAccumulator result false f)]
+               (let [acc (->StreamAccumulator result true f)]
                  (.forEachRemaining sp acc)
                  @acc)))
            head))
        (f))))
   ([f val ^BaseStream stream]
-   (let [acc (->StreamAccumulator val false f)]
+   (let [acc (->StreamAccumulator val true f)]
      (.forEachRemaining (.spliterator stream) acc)
      @acc)))
 
