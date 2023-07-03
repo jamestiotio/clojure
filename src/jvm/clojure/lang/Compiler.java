@@ -7309,6 +7309,8 @@ private static Expr analyzeSymbol(Symbol sym) {
 				if(Reflector.getField(c, sym.name, true) != null)
 					return new StaticFieldExpr(lineDeref(), columnDeref(), c, sym.name, tag);
 				throw Util.runtimeException("Unable to find static field: " + sym.name + " in " + c);
+				// ^^^ this branch is used to try and take apart the method descriptor and
+				// build a MethodValueExpr instance whose default behavior is to throw the above on emit
 				}
 			}
 		}
