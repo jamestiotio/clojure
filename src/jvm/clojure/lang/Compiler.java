@@ -7288,7 +7288,87 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
-private static Expr analyzeSymbol(Symbol sym) {
+public static IPersistentMap processMethodDescriptorString(String methodDescriptor) {
+    String[] parts = methodDescriptor.split("-");
+	IPersistentMap descr = PersistentHashMap.EMPTY.assoc("method", parts[0]);
+	IPersistentVector sig = PersistentVector.EMPTY;
+
+	for (int i = 1; i < parts.length; i++) {
+		Object v = RT.readString(parts[i]);
+
+		if (v instanceof Long) {
+			descr = descr.assoc("arity", v);
+		}
+		else if (v instanceof Symbol) {
+			sig = sig.cons(v);
+		}
+		else {
+			throw new IllegalArgumentException("Invalid method descriptor component " + parts[i] + " in " + methodDescriptor);
+		}
+	}
+
+    return descr.assoc("sig", sig);
+}
+
+public static boolean isMatchingSignature(IPersistentVector sig, Class[] types) {
+	boolean matches = true;
+
+	for (int i = 0; i < sig.length(); i++) {
+		Symbol t = (Symbol) sig.valAt(i);
+		Object mappedClass = currentNS().getMapping(t);
+
+		if (mappedClass == null)
+			throw new IllegalArgumentException("Invalid method descriptor, unknown class " + t);
+
+		Class M = (Class) mappedClass;
+		boolean m = types[i].equals(M);
+
+		if (m)
+			continue;
+		else
+			return false;
+	}
+
+	return matches;
+}
+
+public static java.lang.reflect.Method maybeProcessMethodDescriptor(Class c, String className, String methodDescriptor) {
+	IPersistentMap descr = processMethodDescriptorString(methodDescriptor);
+	int arity = (int) descr.valAt("arity", -1);
+	IPersistentVector sig = (IPersistentVector) descr.valAt("sig");
+	String methodName = (String) descr.valAt("method");
+	List<java.lang.reflect.Method> methods = null;
+
+	if (arity > -1 && sig.length() > 0 && arity != sig.length())
+		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
+	
+	if (arity == -1 && sig.length() > 0) {
+		arity = sig.length();
+	}
+
+	if (arity != -1) {
+		methods = Reflector.getMethods(c, arity, methodName, false);
+		methods.addAll(Reflector.getMethods(c, arity, methodName, true));
+
+		if (methods.size() > 1)
+			throw new IllegalArgumentException("Insufficient method descriptor, use signature to disambiguate " + methods.size() + " methods.");
+
+		java.lang.reflect.Method method = methods.get(0);
+		Class[] types = method.getParameterTypes();
+
+		if (isMatchingSignature(sig, types))
+			return method;
+		else
+			throw new IllegalArgumentException("Insufficient method descriptor, no matching method for " + methodDescriptor);
+	}
+	else {
+
+		return null;
+	}
+}
+
+
+	private static Expr analyzeSymbol(Symbol sym) {
 	Symbol tag = tagOf(sym);
 	if(sym.ns == null) //ns-qualified syms are always Vars
 		{
@@ -7307,12 +7387,18 @@ private static Expr analyzeSymbol(Symbol sym) {
 			if(c != null)
 				{
 				if(Reflector.getField(c, sym.name, true) != null)
+				    {
 					return new StaticFieldExpr(lineDeref(), columnDeref(), c, sym.name, tag);
-				throw Util.runtimeException("Unable to find static field: " + sym.name + " in " + c);
-				// ^^^ this branch is used to try and take apart the method descriptor and
-				// build a MethodValueExpr instance whose default behavior is to throw the above on emit
-				}
-			}
+				    }
+				else
+				    {
+					java.lang.reflect.Method method = maybeProcessMethodDescriptor(c, sym.ns, sym.name);
+				    // ^^^ this branch is used to try and take apart the method descriptor and
+				    // build a MethodValueExpr instance whose default behavior is to throw the above on emit
+					throw Util.runtimeException("Unable to find static field: " + sym.name + " in " + c);
+				    }
+			    }
+		    }
 		}
 	//Var v = lookupVar(sym, false);
 //	Var v = lookupVar(sym, false);
@@ -7338,7 +7424,7 @@ private static Expr analyzeSymbol(Symbol sym) {
 
 }
 
-static String destubClassName(String className){
+	static String destubClassName(String className){
 	//skip over prefix + '.' or '/'
 	if(className.startsWith(COMPILE_STUB_PREFIX))
 		return className.substring(COMPILE_STUB_PREFIX.length()+1);
