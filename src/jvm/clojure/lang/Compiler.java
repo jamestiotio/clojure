@@ -1857,17 +1857,23 @@ static class StaticMethodExpr extends MethodExpr{
 static public class MethodValueExpr extends FnExpr {
 	private final int declaredArity;
 	private final List<Symbol> declaredSignature;
+	private final String targetName;
 	Class clazz;
 	java.lang.reflect.Method method;
 
-	public MethodValueExpr(Object tag, Class c, int arity, List<Symbol> sig) {
+	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig) {
 		super(tag);
 		this.clazz = c;
 		this.declaredArity = arity;
 		this.declaredSignature = sig;
+		this.targetName = targetName;
+		this.method = findMatchingMethod(c, targetName);
 	}
 
-	// will need to do type overload matching etc
+	public Object eval() {
+		throw new UnsupportedOperationException("Can't eval method values");
+	}
+
 	static java.lang.reflect.Method findMatchingMethod(Class c, String methodName) {
 		try {
 			java.lang.reflect.Method[] ms = c.getMethods();
@@ -1882,10 +1888,6 @@ static public class MethodValueExpr extends FnExpr {
 			throw Util.sneakyThrow(t);
 		}
 		return null;
-	}
-
-	public Object eval() {
-		throw new UnsupportedOperationException("Can't eval method values");
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
@@ -1906,8 +1908,6 @@ static public class MethodValueExpr extends FnExpr {
 	public Class getJavaClass() {
 		return this.method.getReturnType();
 	}
-
-
 }
 
 static class UnresolvedVarExpr implements Expr{
@@ -7368,7 +7368,11 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String class
 		}
 	}
 
-	MethodValueExpr mve = new MethodValueExpr(null, c, declaredArity, declaredSignature);
+	if (!declaredSignature.isEmpty() && declaredArity >= 0 && declaredArity != declaredSignature.size()) {
+		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
+	}
+
+	MethodValueExpr mve = new MethodValueExpr(null, c, targetName, declaredArity, declaredSignature);
 
 	return mve;
 }
