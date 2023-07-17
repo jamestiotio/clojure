@@ -1854,6 +1854,62 @@ static class StaticMethodExpr extends MethodExpr{
 	}
 }
 
+static public class MethodValueExpr extends FnExpr {
+	private final int declaredArity;
+	private final List<Symbol> declaredSignature;
+	Class clazz;
+	java.lang.reflect.Method method;
+
+	public MethodValueExpr(Object tag, Class c, int arity, List<Symbol> sig) {
+		super(tag);
+		this.clazz = c;
+		this.declaredArity = arity;
+		this.declaredSignature = sig;
+	}
+
+	// will need to do type overload matching etc
+	static java.lang.reflect.Method findMatchingMethod(Class c, String methodName) {
+		try {
+			java.lang.reflect.Method[] ms = c.getMethods();
+			for (int i = 0; i < ms.length; i++) {
+				if(ms[i].getName().equals(methodName)) {
+					if(ms[i].getParameterTypes()[0].equals(Character.TYPE)) {
+						return ms[i];
+					}
+				}
+			}
+		} catch(Throwable t) {
+			throw Util.sneakyThrow(t);
+		}
+		return null;
+	}
+
+	public Object eval() {
+		throw new UnsupportedOperationException("Can't eval method values");
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		FnExpr fnExpr = new FnExpr(null);
+		// (fn [c] (. Character toUpperCase c))
+		ISeq form =
+				RT.list(Symbol.intern("fn"), RT.list(RT.vector(Symbol.intern("c")),
+						RT.list(Symbol.intern("."), Symbol.intern(this.clazz.getName()),
+								RT.list(Symbol.intern(this.method.getName()), Symbol.intern("c")))));
+		Expr retExpr = analyzeSeq(context, form, "FOO");
+		retExpr.emit(context, objx, gen);
+	}
+
+	public boolean hasJavaClass() {
+		return true;
+	}
+
+	public Class getJavaClass() {
+		return this.method.getReturnType();
+	}
+
+
+}
+
 static class UnresolvedVarExpr implements Expr{
 	public final Symbol symbol;
 
@@ -7288,85 +7344,34 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
-public static IPersistentMap processMethodDescriptorString(String methodDescriptor) {
-    String[] parts = methodDescriptor.split("-");
-	IPersistentMap descr = PersistentHashMap.EMPTY.assoc("method", parts[0]);
-	IPersistentVector sig = PersistentVector.EMPTY;
+public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String className, String targetDescriptor) {
+	String[] parts = targetDescriptor.split("-", 2);
+	String targetName = parts[0];
+	String targetDisambiguation = parts.length > 1 ? parts[1] : null;
+	int declaredArity = -1;
+	List<Symbol> declaredSignature = new ArrayList<>();
 
-	for (int i = 1; i < parts.length; i++) {
-		Object v = RT.readString(parts[i]);
+	if (targetDisambiguation != null) {
+		String[] disParts = targetDisambiguation.split("-");
+		for (int i = 0; i < disParts.length; i++) {
+			Object v = RT.readString(disParts[i]);
 
-		if (v instanceof Long) {
-			descr = descr.assoc("arity", v);
+			if (v instanceof Long) {
+				declaredArity = ((Long) v).intValue();
+			}
+			else if (v instanceof Symbol) {
+				declaredSignature.add((Symbol) v);
+			}
+			else {
+				throw new IllegalArgumentException("Invalid method descriptor component " + parts[i] + " in " + targetDescriptor);
+			}
 		}
-		else if (v instanceof Symbol) {
-			sig = sig.cons(v);
-		}
-		else {
-			throw new IllegalArgumentException("Invalid method descriptor component " + parts[i] + " in " + methodDescriptor);
-		}
 	}
 
-    return descr.assoc("sig", sig);
+	MethodValueExpr mve = new MethodValueExpr(null, c, declaredArity, declaredSignature);
+
+	return mve;
 }
-
-public static boolean isMatchingSignature(IPersistentVector sig, Class[] types) {
-	boolean matches = true;
-
-	for (int i = 0; i < sig.length(); i++) {
-		Symbol t = (Symbol) sig.valAt(i);
-		Object mappedClass = currentNS().getMapping(t);
-
-		if (mappedClass == null)
-			throw new IllegalArgumentException("Invalid method descriptor, unknown class " + t);
-
-		Class M = (Class) mappedClass;
-		boolean m = types[i].equals(M);
-
-		if (m)
-			continue;
-		else
-			return false;
-	}
-
-	return matches;
-}
-
-public static java.lang.reflect.Method maybeProcessMethodDescriptor(Class c, String className, String methodDescriptor) {
-	IPersistentMap descr = processMethodDescriptorString(methodDescriptor);
-	int arity = (int) descr.valAt("arity", -1);
-	IPersistentVector sig = (IPersistentVector) descr.valAt("sig");
-	String methodName = (String) descr.valAt("method");
-	List<java.lang.reflect.Method> methods = null;
-
-	if (arity > -1 && sig.length() > 0 && arity != sig.length())
-		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
-	
-	if (arity == -1 && sig.length() > 0) {
-		arity = sig.length();
-	}
-
-	if (arity != -1) {
-		methods = Reflector.getMethods(c, arity, methodName, false);
-		methods.addAll(Reflector.getMethods(c, arity, methodName, true));
-
-		if (methods.size() > 1)
-			throw new IllegalArgumentException("Insufficient method descriptor, use signature to disambiguate " + methods.size() + " methods.");
-
-		java.lang.reflect.Method method = methods.get(0);
-		Class[] types = method.getParameterTypes();
-
-		if (isMatchingSignature(sig, types))
-			return method;
-		else
-			throw new IllegalArgumentException("Insufficient method descriptor, no matching method for " + methodDescriptor);
-	}
-	else {
-
-		return null;
-	}
-}
-
 
 	private static Expr analyzeSymbol(Symbol sym) {
 	Symbol tag = tagOf(sym);
@@ -7392,10 +7397,7 @@ public static java.lang.reflect.Method maybeProcessMethodDescriptor(Class c, Str
 				    }
 				else
 				    {
-					java.lang.reflect.Method method = maybeProcessMethodDescriptor(c, sym.ns, sym.name);
-				    // ^^^ this branch is used to try and take apart the method descriptor and
-				    // build a MethodValueExpr instance whose default behavior is to throw the above on emit
-					throw Util.runtimeException("Unable to find static field: " + sym.name + " in " + c);
+					return maybeProcessMethodDescriptor(c, sym.ns, sym.name);
 				    }
 			    }
 		    }
