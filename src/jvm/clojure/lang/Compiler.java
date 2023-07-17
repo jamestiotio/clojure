@@ -1856,18 +1856,49 @@ static class StaticMethodExpr extends MethodExpr{
 
 static public class MethodValueExpr extends FnExpr {
 	private final int declaredArity;
-	private final List<Symbol> declaredSignature;
+	private final List<Class> declaredSignature;
 	private final String targetName;
 	Class clazz;
 	java.lang.reflect.Method method;
+
+	Map<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
+		put(Symbol.intern("double"), double.class);
+		put(Symbol.intern("long"), long.class);
+		put(Symbol.intern("int"), int.class);
+		put(Symbol.intern("float"), float.class);
+		put(Symbol.intern("char"), char.class);
+		put(Symbol.intern("short"), short.class);
+		put(Symbol.intern("byte"), byte.class);
+		put(Symbol.intern("boolean"), boolean.class);
+	}};
 
 	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig) {
 		super(tag);
 		this.clazz = c;
 		this.declaredArity = arity;
-		this.declaredSignature = sig;
+		this.declaredSignature = processDeclaredSignature(sig);
 		this.targetName = targetName;
 		this.method = findMatchingMethod(c, targetName);
+	}
+
+	private List<Class> processDeclaredSignature(List<Symbol> sig) {
+		List<Class> tsig = new ArrayList<>();
+		for (Symbol t : sig) {
+			if (prims.containsKey(t)) {
+				tsig.add(prims.get(t));
+			}
+			else {
+				Object maybeClass = currentNS().getMapping(t);
+
+				if (maybeClass == null) {
+					throw new IllegalArgumentException("Invalid method descriptor, unknown class " + t);
+				}
+
+				tsig.add((Class) maybeClass);
+			}
+		}
+
+		return tsig;
 	}
 
 	public Object eval() {
@@ -1891,7 +1922,6 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
-		FnExpr fnExpr = new FnExpr(null);
 		// (fn [c] (. Character toUpperCase c))
 		ISeq form =
 				RT.list(Symbol.intern("fn"), RT.list(RT.vector(Symbol.intern("c")),
