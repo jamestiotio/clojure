@@ -20,10 +20,12 @@ import clojure.asm.commons.Method;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.stream.Collectors;
 
 //*/
 /*
@@ -1859,7 +1861,7 @@ static public class MethodValueExpr extends FnExpr {
 	private final List<Class> declaredSignature;
 	private final String targetName;
 	Class clazz;
-	java.lang.reflect.Method method;
+	Executable target;
 
 	Map<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
 		put(Symbol.intern("double"), double.class);
@@ -1878,7 +1880,20 @@ static public class MethodValueExpr extends FnExpr {
 		this.declaredArity = arity;
 		this.declaredSignature = processDeclaredSignature(sig);
 		this.targetName = targetName;
-		this.method = findMatchingMethod(c, targetName);
+
+		if (isCtor()) {
+			this.target = findMatchingTarget(c.getConstructors(), c, this.clazz.getName());
+		} else {
+			this.target = findMatchingTarget(c.getMethods(), c, targetName);
+		}
+	}
+
+	public boolean isStatic() {
+		return Modifier.isStatic(this.target.getModifiers());
+	}
+
+	public boolean isCtor() {
+		return this.targetName.equals("new");
 	}
 
 	private List<Class> processDeclaredSignature(List<Symbol> sig) {
@@ -1905,30 +1920,112 @@ static public class MethodValueExpr extends FnExpr {
 		throw new UnsupportedOperationException("Can't eval method values");
 	}
 
-	static java.lang.reflect.Method findMatchingMethod(Class c, String methodName) {
+	Executable findMatchingTarget(Executable[] targets, Class c, String targetName) {
+		List<Executable> potentialTargets = new ArrayList<>();
+
 		try {
-			java.lang.reflect.Method[] ms = c.getMethods();
-			for (int i = 0; i < ms.length; i++) {
-				if(ms[i].getName().equals(methodName)) {
-					if(ms[i].getParameterTypes()[0].equals(Character.TYPE)) {
-						return ms[i];
-					}
+			for (int i = 0; i < targets.length; i++) {
+				if(targets[i].getName().equals(targetName)) {
+					potentialTargets.add(targets[i]);
 				}
 			}
 		} catch(Throwable t) {
 			throw Util.sneakyThrow(t);
 		}
-		return null;
+
+		java.util.stream.Stream<Executable> targetStream = potentialTargets.stream();
+
+		if(this.declaredArity > -1) {
+			targetStream = targetStream.filter(t -> t.getParameterTypes().length == this.declaredArity);
+		}
+
+		if(!this.declaredSignature.isEmpty()) {
+			targetStream = targetStream.filter(t -> {
+				List<Class<?>> expected = Arrays.asList(t.getParameterTypes());
+				return expected.equals(this.declaredSignature);
+			});
+		}
+
+		List<Executable> filteredTargets = targetStream.collect(Collectors.toList());
+
+		if(filteredTargets.isEmpty())  throw new IllegalArgumentException("Could not resolve method from declarator for " + this.targetName);
+		if(filteredTargets.size() > 1) throw new IllegalArgumentException("Ambiguous method declarator for " + this.targetName);
+
+		Executable target = filteredTargets.get(0);
+
+		if(target.isVarArgs()) throw new UnsupportedOperationException("Varargs not supported in method thunks, got " + this.targetName);
+
+		return target;
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
-		// (fn [c] (. Character toUpperCase c))
-		ISeq form =
-				RT.list(Symbol.intern("fn"), RT.list(RT.vector(Symbol.intern("c")),
-						RT.list(Symbol.intern("."), Symbol.intern(this.clazz.getName()),
-								RT.list(Symbol.intern(this.method.getName()), Symbol.intern("c")))));
-		Expr retExpr = analyzeSeq(context, form, "FOO");
+		String name = buildThunkName();
+		ISeq form = buildThunk(name);
+		Expr retExpr = analyzeSeq(context, form, name);
 		retExpr.emit(context, objx, gen);
+	}
+
+	private String buildThunkName() {
+		return "dot__" + this.targetName + RT.nextID();
+	}
+
+	public ISeq buildThunk(String name) {
+		// (fn dot__new42 ([^T arg] (new Klass arg)))
+		return	RT.list(Symbol.intern("fn"), Symbol.intern(name),
+				  buildThunkBody(buildThunkParams()));
+	}
+
+	private IPersistentVector buildThunkParams() {
+		IPersistentVector params = PersistentVector.EMPTY;
+
+		if(isCtor() || isStatic()) {
+			// [^T arg1 ^U arg2]
+			for(Class klass : this.target.getParameterTypes()) {
+				params = params.cons(maybeHintParam(klass, Symbol.intern("arg" + RT.nextID())));
+			}
+		}
+		else {
+			// [^T self ^U arg]
+			params = params.cons(Symbol.intern("self" + RT.nextID())
+					.withMeta(PersistentHashMap.create(Keyword.intern("tag"), Symbol.intern(this.clazz.getName()))));
+			for(Class klass : this.target.getParameterTypes()) {
+				params = params.cons(maybeHintParam(klass, Symbol.intern("arg" + RT.nextID())));
+			}
+		}
+
+		return params;
+	}
+
+	private Symbol maybeHintParam(Class klass, Symbol name) {
+		if (klass.equals(Long.TYPE) || klass.equals(Double.TYPE) || !klass.isPrimitive()) {
+			return (Symbol) name.withMeta(PersistentHashMap.create(Keyword.intern("tag"), Symbol.intern(klass.getName())));
+		}
+		return name;
+	}
+
+	private ISeq buildThunkBody(IPersistentVector params) {
+		// ([^T arg] (. Klass staticMethod arg))
+		// ([^Klass self ^T arg] (. self instanceMethod arg))
+		// ([^T arg] (new Klass arg))
+		ISeq body = RT.list(params, buildThunkDispatch(params));
+		return body;
+	}
+
+	private ISeq buildThunkDispatch(IPersistentVector params) {
+		if (isCtor()) {
+			// ([^T arg] (new Klass arg))
+			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), params.seq());
+		} else if (isStatic()) {
+			// ([^T arg] (. Klass staticMethod arg))
+			return RT.listStar(Symbol.intern("."),
+					Symbol.intern(this.clazz.getName()), Symbol.intern(this.target.getName()),
+					params.seq());
+		} else {
+			// ([^Klass self ^T arg] (. self instanceMethod arg))
+			return RT.listStar(Symbol.intern("."),
+					params.seq().first(), Symbol.intern(this.target.getName()),
+					params.seq().next());
+		}
 	}
 
 	public boolean hasJavaClass() {
@@ -1936,7 +2033,12 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	public Class getJavaClass() {
-		return this.method.getReturnType();
+		if (isCtor()) {
+			return this.clazz;
+		}
+		else {
+			return ((java.lang.reflect.Method)this.target).getReturnType();
+		}
 	}
 }
 
@@ -7402,7 +7504,11 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String class
 		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
 	}
 
-	MethodValueExpr mve = new MethodValueExpr(null, c, targetName, declaredArity, declaredSignature);
+	MethodValueExpr mve = new MethodValueExpr(null,
+			c,
+			targetName,
+			(declaredArity == -1 && declaredSignature.size() > 0) ? declaredSignature.size() : declaredArity,
+			declaredSignature);
 
 	return mve;
 }
