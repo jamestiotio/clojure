@@ -1920,12 +1920,14 @@ static public class MethodValueExpr extends FnExpr {
 		throw new UnsupportedOperationException("Can't eval method values");
 	}
 
-	Executable findMatchingTarget(Executable[] targets, Class c, String targetName) {
+	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName) {
 		List<Executable> potentialTargets = new ArrayList<>();
+		int leastArity = Integer.MAX_VALUE;
 
 		try {
 			for (int i = 0; i < targets.length; i++) {
 				if(targets[i].getName().equals(targetName)) {
+					leastArity = Math.min(targets[i].getParameterCount(), leastArity);
 					potentialTargets.add(targets[i]);
 				}
 			}
@@ -1937,6 +1939,10 @@ static public class MethodValueExpr extends FnExpr {
 
 		if(this.declaredArity > -1) {
 			targetStream = targetStream.filter(t -> t.getParameterTypes().length == this.declaredArity);
+		}
+		else {
+			int finalLeastArity = leastArity;
+			targetStream = targetStream.filter(t -> t.getParameterCount() == finalLeastArity);
 		}
 
 		if(!this.declaredSignature.isEmpty()) {
@@ -1969,7 +1975,7 @@ static public class MethodValueExpr extends FnExpr {
 		return "dot__" + this.targetName + RT.nextID();
 	}
 
-	public ISeq buildThunk(String name) {
+	private ISeq buildThunk(String name) {
 		// (fn dot__new42 ([^T arg] (new Klass arg)))
 		return	RT.list(Symbol.intern("fn"), Symbol.intern(name),
 				  buildThunkBody(buildThunkParams()));
