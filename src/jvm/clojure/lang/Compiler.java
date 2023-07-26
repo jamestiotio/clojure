@@ -1863,15 +1863,23 @@ static public class MethodValueExpr extends FnExpr {
 	Class clazz;
 	Executable target;
 
-	Map<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
+	HashMap<Symbol, Class> coercables = new HashMap<Symbol, Class>() {{
 		put(Symbol.intern("double"), double.class);
+		put(Symbol.intern("doubles"), double[].class);
 		put(Symbol.intern("long"), long.class);
+		put(Symbol.intern("longs"), long[].class);
 		put(Symbol.intern("int"), int.class);
+		put(Symbol.intern("ints"), int[].class);
 		put(Symbol.intern("float"), float.class);
+		put(Symbol.intern("floats"), float[].class);
 		put(Symbol.intern("char"), char.class);
+		put(Symbol.intern("chars"), char[].class);
 		put(Symbol.intern("short"), short.class);
+		put(Symbol.intern("shorts"), short[].class);
 		put(Symbol.intern("byte"), byte.class);
+		put(Symbol.intern("bytes"), byte[].class);
 		put(Symbol.intern("boolean"), boolean.class);
+		put(Symbol.intern("booleans"), boolean[].class);
 	}};
 
 	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig) {
@@ -1899,8 +1907,8 @@ static public class MethodValueExpr extends FnExpr {
 	private List<Class> processDeclaredSignature(List<Symbol> sig) {
 		List<Class> tsig = new ArrayList<>();
 		for (Symbol t : sig) {
-			if (prims.containsKey(t)) {
-				tsig.add(prims.get(t));
+			if (coercables.containsKey(t)) {
+				tsig.add(coercables.get(t));
 			}
 			else {
 				Object maybeClass = currentNS().getMapping(t);
@@ -2017,20 +2025,44 @@ static public class MethodValueExpr extends FnExpr {
 		return body;
 	}
 
+	ISeq maybeCoerce(ISeq args) {
+		Class[] sig = this.target.getParameterTypes();
+		ArrayList ret = new ArrayList();
+		HashMap<Class, Symbol> coerceFns = new HashMap<>();
+
+		for (Map.Entry<Symbol, Class> entry : this.coercables.entrySet()) {
+			coerceFns.put(entry.getValue(), entry.getKey());
+		}
+
+		for(int i = 0; args != null; args = args.next(), i++) {
+			if (coerceFns.containsKey(sig[i])) {
+				ArrayList coerceCall = new ArrayList();
+				coerceCall.add(coerceFns.get(sig[i]));
+				coerceCall.add(args.first());
+				ret.add(RT.seq(coerceCall));
+			}
+			else {
+				ret.add(args.first());
+			}
+		}
+
+		return RT.seq(ret);
+	}
+
 	private ISeq buildThunkDispatch(IPersistentVector params) {
 		if (isCtor()) {
 			// ([^T arg] (new Klass arg))
-			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), params.seq());
+			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), maybeCoerce(params.seq()));
 		} else if (isStatic()) {
 			// ([^T arg] (. Klass staticMethod arg))
 			return RT.listStar(Symbol.intern("."),
 					Symbol.intern(this.clazz.getName()), Symbol.intern(this.target.getName()),
-					params.seq());
+					maybeCoerce(params.seq()));
 		} else {
 			// ([^Klass self ^T arg] (. self instanceMethod arg))
 			return RT.listStar(Symbol.intern("."),
 					params.seq().first(), Symbol.intern(this.target.getName()),
-					params.seq().next());
+					maybeCoerce(params.seq().next()));
 		}
 	}
 
