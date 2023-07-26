@@ -1863,7 +1863,7 @@ static public class MethodValueExpr extends FnExpr {
 	Class clazz;
 	Executable target;
 
-	HashMap<Symbol, Class> coercables = new HashMap<Symbol, Class>() {{
+	HashMap<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
 		put(Symbol.intern("double"), double.class);
 		put(Symbol.intern("doubles"), double[].class);
 		put(Symbol.intern("long"), long.class);
@@ -1882,6 +1882,8 @@ static public class MethodValueExpr extends FnExpr {
 		put(Symbol.intern("booleans"), boolean[].class);
 	}};
 
+	HashMap<Class, Symbol> coerceFns = new HashMap<>();
+
 	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig) {
 		super(tag);
 		this.clazz = c;
@@ -1893,6 +1895,10 @@ static public class MethodValueExpr extends FnExpr {
 			this.target = findMatchingTarget(c.getConstructors(), c, this.clazz.getName());
 		} else {
 			this.target = findMatchingTarget(c.getMethods(), c, targetName);
+		}
+
+		for (Map.Entry<Symbol, Class> entry : this.prims.entrySet()) {
+			this.coerceFns.put(entry.getValue(), entry.getKey());
 		}
 	}
 
@@ -1907,8 +1913,8 @@ static public class MethodValueExpr extends FnExpr {
 	private List<Class> processDeclaredSignature(List<Symbol> sig) {
 		List<Class> tsig = new ArrayList<>();
 		for (Symbol t : sig) {
-			if (coercables.containsKey(t)) {
-				tsig.add(coercables.get(t));
+			if (prims.containsKey(t)) {
+				tsig.add(prims.get(t));
 			}
 			else {
 				Object maybeClass = currentNS().getMapping(t);
@@ -2025,19 +2031,14 @@ static public class MethodValueExpr extends FnExpr {
 		return body;
 	}
 
-	ISeq maybeCoerce(ISeq args) {
+	ISeq maybeCoerceArgs(ISeq args) {
 		Class[] sig = this.target.getParameterTypes();
 		ArrayList ret = new ArrayList();
-		HashMap<Class, Symbol> coerceFns = new HashMap<>();
-
-		for (Map.Entry<Symbol, Class> entry : this.coercables.entrySet()) {
-			coerceFns.put(entry.getValue(), entry.getKey());
-		}
 
 		for(int i = 0; args != null; args = args.next(), i++) {
-			if (coerceFns.containsKey(sig[i])) {
+			if (this.coerceFns.containsKey(sig[i])) {
 				ArrayList coerceCall = new ArrayList();
-				coerceCall.add(coerceFns.get(sig[i]));
+				coerceCall.add(this.coerceFns.get(sig[i]));
 				coerceCall.add(args.first());
 				ret.add(RT.seq(coerceCall));
 			}
@@ -2052,17 +2053,23 @@ static public class MethodValueExpr extends FnExpr {
 	private ISeq buildThunkDispatch(IPersistentVector params) {
 		if (isCtor()) {
 			// ([^T arg] (new Klass arg))
-			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), maybeCoerce(params.seq()));
+			// ([^long arg1 ^double arg2] (new Klass arg1 arg2))
+			// ([prim] (new Klass (coercefn prim)))
+			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), maybeCoerceArgs(params.seq()));
 		} else if (isStatic()) {
 			// ([^T arg] (. Klass staticMethod arg))
+			// ([^long arg1 ^double arg2] (. Klass staticMethod arg1 arg2))
+			// ([prim] (. Klass staticMethod (coercefn prim)))
 			return RT.listStar(Symbol.intern("."),
 					Symbol.intern(this.clazz.getName()), Symbol.intern(this.target.getName()),
-					maybeCoerce(params.seq()));
+					maybeCoerceArgs(params.seq()));
 		} else {
 			// ([^Klass self ^T arg] (. self instanceMethod arg))
+			// ([^long arg1 ^double arg2] (. self instanceMethod arg1 arg2))
+			// ([^Klass self prim] (. self instanceMethod (coercefn prim)))
 			return RT.listStar(Symbol.intern("."),
 					params.seq().first(), Symbol.intern(this.target.getName()),
-					maybeCoerce(params.seq().next()));
+					maybeCoerceArgs(params.seq().next()));
 		}
 	}
 
@@ -7514,7 +7521,7 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
-public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String className, String targetDescriptor) {
+public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targetDescriptor) {
 	String[] parts = targetDescriptor.split("-", 2);
 	String targetName = parts[0];
 	String targetDisambiguation = parts.length > 1 ? parts[1] : null;
@@ -7575,7 +7582,7 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String class
 				    }
 				else
 				    {
-					return maybeProcessMethodDescriptor(c, sym.ns, sym.name);
+					return maybeProcessMethodDescriptor(c, sym.name);
 				    }
 			    }
 		    }

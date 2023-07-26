@@ -9,5 +9,25 @@
 ; Authors: Fogus
 
 (ns clojure.test-clojure.method-thunks
-  (:use clojure.test))
+  (:use clojure.test)
+  (:import (clojure.lang Compiler)
+           (java.util Arrays UUID Locale)))
+
+(deftest properly-formed-method-descriptor
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "notAMethodThatExists")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-2")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-2-Locale")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-noprim")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-Instant")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor Math "abs-1")))
+  (is (thrown? IllegalArgumentException
+               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-UUID")))
+  (is (thrown? UnsupportedOperationException
+               (Compiler/maybeProcessMethodDescriptor Arrays "asList"))))
 
