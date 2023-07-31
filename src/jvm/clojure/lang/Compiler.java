@@ -2017,6 +2017,17 @@ static public class MethodValueExpr extends FnExpr {
 			}
 		}
 
+		return maybeHintReturn((PersistentVector)params);
+	}
+
+	private IPersistentVector maybeHintReturn(PersistentVector params) {
+		if (!isCtor()) {
+			Class t = ((java.lang.reflect.Method) this.target).getReturnType();
+
+			if (t.isPrimitive() && (t.equals(Long.TYPE) || t.equals(Double.TYPE))) {
+				return params.withMeta(PersistentHashMap.create(Keyword.intern("tag"), this.coerceFns.get(t)));
+			}
+		}
 		return params;
 	}
 

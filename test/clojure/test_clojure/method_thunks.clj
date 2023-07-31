@@ -11,7 +11,8 @@
 (ns clojure.test-clojure.method-thunks
   (:use clojure.test)
   (:import (clojure.lang Compiler Tuple)
-           (java.util Arrays UUID Locale)))
+           (java.util Arrays UUID Locale)
+           clojure.lang.IFn$LL))
 
 (set! *warn-on-reflection* true)
 
@@ -66,3 +67,7 @@
   (is (= #uuid "00000000-0000-0001-0000-000000000002"
          ((:fromString mts) "00000000-0000-0001-0000-000000000002")))
   (is (= [1] (mt 1))))
+
+(deftest primitive-hinting
+  (is (instance? clojure.lang.IFn$DO String/valueOf-double))
+  (is (instance? clojure.lang.IFn$LL Math/abs-long)))
