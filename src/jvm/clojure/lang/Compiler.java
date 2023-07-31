@@ -1917,10 +1917,12 @@ static public class MethodValueExpr extends FnExpr {
 				tsig.add(prims.get(t));
 			}
 			else {
-				Object maybeClass = currentNS().getMapping(t);
+				Object maybeClass = maybeResolveIn(currentNS(), t);
+//				System.out.println(":=======> " + t + " --- " + currentNS());
 
 				if (maybeClass == null) {
-					throw new IllegalArgumentException("Invalid method descriptor, unknown class " + t);
+					ClassNotFoundException cnfe = new ClassNotFoundException(t.name);
+					Util.sneakyThrow(cnfe);
 				}
 
 				tsig.add((Class) maybeClass);
@@ -1929,11 +1931,6 @@ static public class MethodValueExpr extends FnExpr {
 
 		return tsig;
 	}
-
-	public Object eval() {
-		throw new UnsupportedOperationException("Can't eval method values");
-	}
-
 	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName) {
 		List<Executable> potentialTargets = new ArrayList<>();
 		int leastArity = Integer.MAX_VALUE;
@@ -1976,6 +1973,13 @@ static public class MethodValueExpr extends FnExpr {
 		if(target.isVarArgs()) throw new UnsupportedOperationException("Varargs not supported in method thunks, got " + this.targetName);
 
 		return target;
+	}
+
+	public Object eval() {
+		String name = buildThunkName();
+		ISeq form = buildThunk(name);
+		Expr retExpr = analyzeSeq(null, form, name);
+		return retExpr.eval();
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
