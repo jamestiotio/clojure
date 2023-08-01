@@ -23,6 +23,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Modifier;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -1860,7 +1861,7 @@ static public class MethodValueExpr extends FnExpr {
 	private final int declaredArity;
 	private final List<Class> declaredSignature;
 	private final String targetName;
-	Class clazz;
+	Class klass;
 	Executable target;
 
 	HashMap<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
@@ -1884,19 +1885,20 @@ static public class MethodValueExpr extends FnExpr {
 
 	HashMap<Class, Symbol> coerceFns = new HashMap<>();
 
-	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig) {
+	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig){
 		super(tag);
-		this.clazz = c;
+		this.klass = c;
 		this.declaredArity = arity;
 		this.declaredSignature = processDeclaredSignature(sig);
 		this.targetName = targetName;
 
 		if (isCtor()) {
-			this.target = findMatchingTarget(c.getConstructors(), c, this.clazz.getName());
+			this.target = findMatchingTarget(c.getConstructors(), c, this.klass.getName());
 		} else {
 			this.target = findMatchingTarget(c.getMethods(), c, targetName);
 		}
 
+		// map the primitive types to coercion functions
 		for (Map.Entry<Symbol, Class> entry : this.prims.entrySet()) {
 			this.coerceFns.put(entry.getValue(), entry.getKey());
 		}
@@ -1912,56 +1914,82 @@ static public class MethodValueExpr extends FnExpr {
 
 	private List<Class> processDeclaredSignature(List<Symbol> sig) {
 		List<Class> tsig = new ArrayList<>();
-		for (Symbol t : sig) {
-			if (prims.containsKey(t)) {
+		for (Symbol t : sig)
+			{
+			if (prims.containsKey(t))
+				{
 				tsig.add(prims.get(t));
-			}
-			else {
+				}
+			else
+				{
 				Object maybeClass = maybeResolveIn(currentNS(), t);
-//				System.out.println(":=======> " + t + " --- " + currentNS());
 
-				if (maybeClass == null) {
+				if (maybeClass == null)
+					{
 					ClassNotFoundException cnfe = new ClassNotFoundException(t.name);
 					Util.sneakyThrow(cnfe);
-				}
+					}
 
 				tsig.add((Class) maybeClass);
+				}
 			}
-		}
-
 		return tsig;
 	}
-	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName) {
+	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName){
 		List<Executable> potentialTargets = new ArrayList<>();
 		int leastArity = Integer.MAX_VALUE;
 
-		try {
-			for (int i = 0; i < targets.length; i++) {
-				if(targets[i].getName().equals(targetName)) {
+		try
+			{
+			for (int i = 0; i < targets.length; i++)
+				{
+				if(targets[i].getName().equals(targetName))
+					{
 					leastArity = Math.min(targets[i].getParameterCount(), leastArity);
 					potentialTargets.add(targets[i]);
+					}
 				}
 			}
-		} catch(Throwable t) {
+		catch(Throwable t)
+			{
 			throw Util.sneakyThrow(t);
-		}
+			}
 
 		java.util.stream.Stream<Executable> targetStream = potentialTargets.stream();
 
-		if(this.declaredArity > -1) {
-			targetStream = targetStream.filter(t -> t.getParameterTypes().length == this.declaredArity);
-		}
-		else {
+		if(this.declaredArity > -1)
+			{
+			targetStream = targetStream.filter(new Predicate<Executable>() {
+				@Override
+				public boolean test(Executable t)
+					{
+					return t.getParameterTypes().length == MethodValueExpr.this.declaredArity;
+					}
+				});
+			}
+		else
+			{
 			int finalLeastArity = leastArity;
-			targetStream = targetStream.filter(t -> t.getParameterCount() == finalLeastArity);
-		}
+			targetStream = targetStream.filter(new Predicate<Executable>() {
+				@Override
+				public boolean test(Executable t)
+					{
+					return t.getParameterCount() == finalLeastArity;
+					}
+				});
+			}
 
-		if(!this.declaredSignature.isEmpty()) {
-			targetStream = targetStream.filter(t -> {
-				List<Class<?>> expected = Arrays.asList(t.getParameterTypes());
-				return expected.equals(this.declaredSignature);
-			});
-		}
+		if(!this.declaredSignature.isEmpty())
+			{
+			targetStream = targetStream.filter(new Predicate<Executable>() {
+				@Override
+				public boolean test(Executable t)
+					{
+					List<Class<?>> expected = Arrays.asList(t.getParameterTypes());
+					return expected.equals(MethodValueExpr.this.declaredSignature);
+					}
+				});
+			}
 
 		List<Executable> filteredTargets = targetStream.collect(Collectors.toList());
 
@@ -1975,70 +2003,80 @@ static public class MethodValueExpr extends FnExpr {
 		return target;
 	}
 
-	public Object eval() {
+	public Object eval(){
 		String name = buildThunkName();
 		ISeq form = buildThunk(name);
 		Expr retExpr = analyzeSeq(null, form, name);
 		return retExpr.eval();
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
 		String name = buildThunkName();
 		ISeq form = buildThunk(name);
 		Expr retExpr = analyzeSeq(context, form, name);
 		retExpr.emit(context, objx, gen);
 	}
 
-	private String buildThunkName() {
+	private String buildThunkName(){
 		return "dot__" + this.targetName + RT.nextID();
 	}
 
 	private ISeq buildThunk(String name) {
 		// (fn dot__new42 ([^T arg] (new Klass arg)))
+		// (fn dot__staticMethod42 (^r [^T arg] (. Klass staticMethod arg)))
+		// (fn dot__instanceMethod42 (^r [^Klass self ^T arg] (. ^Klass self instanceMethod arg)))
 		return	RT.list(Symbol.intern("fn"), Symbol.intern(name),
 				  buildThunkBody(buildThunkParams()));
 	}
 
-	private IPersistentVector buildThunkParams() {
+	private IPersistentVector buildThunkParams(){
 		IPersistentVector params = PersistentVector.EMPTY;
 
-		if(isCtor() || isStatic()) {
+		if(isCtor() || isStatic())
+			{
 			// [^T arg1 ^U arg2]
-			for(Class klass : this.target.getParameterTypes()) {
+			for(Class klass : this.target.getParameterTypes())
+				{
 				params = params.cons(maybeHintParam(klass, Symbol.intern("arg" + RT.nextID())));
+				}
 			}
-		}
-		else {
+		else
+			{
 			// [^T self ^U arg]
 			params = params.cons(Symbol.intern("self" + RT.nextID())
-					.withMeta(PersistentHashMap.create(Keyword.intern("tag"), Symbol.intern(this.clazz.getName()))));
-			for(Class klass : this.target.getParameterTypes()) {
+					.withMeta(PersistentHashMap.create(Keyword.intern("tag"), Symbol.intern(this.klass.getName()))));
+			for(Class klass : this.target.getParameterTypes())
+				{
 				params = params.cons(maybeHintParam(klass, Symbol.intern("arg" + RT.nextID())));
+				}
 			}
-		}
-
 		return maybeHintReturn((PersistentVector)params);
 	}
 
-	private IPersistentVector maybeHintReturn(PersistentVector params) {
-		if (!isCtor()) {
+	private IPersistentVector maybeHintReturn(PersistentVector params){
+		// ^long [...]
+		// ^double [...]
+		if (!isCtor())
+			{
 			Class t = ((java.lang.reflect.Method) this.target).getReturnType();
 
-			if (t.isPrimitive() && (t.equals(Long.TYPE) || t.equals(Double.TYPE))) {
+			if (t.isPrimitive() && (t.equals(Long.TYPE) || t.equals(Double.TYPE)))
+				{
 				return params.withMeta(PersistentHashMap.create(Keyword.intern("tag"), this.coerceFns.get(t)));
+				}
 			}
-		}
 		return params;
 	}
 
-	private Symbol maybeHintParam(Class klass, Symbol name) {
-		if (klass.equals(Long.TYPE) || klass.equals(Double.TYPE) || !klass.isPrimitive()) {
+	private Symbol maybeHintParam(Class klass, Symbol name){
+		if (klass.equals(Long.TYPE) || klass.equals(Double.TYPE) || !klass.isPrimitive())
+			{
 			return (Symbol) name.withMeta(PersistentHashMap.create(Keyword.intern("tag"), Symbol.intern(klass.getName())));
-		}
+			}
 		return name;
 	}
 
-	private ISeq buildThunkBody(IPersistentVector params) {
+	private ISeq buildThunkBody(IPersistentVector params){
 		// ([^T arg] (. Klass staticMethod arg))
 		// ([^Klass self ^T arg] (. self instanceMethod arg))
 		// ([^T arg] (new Klass arg))
@@ -2046,46 +2084,54 @@ static public class MethodValueExpr extends FnExpr {
 		return body;
 	}
 
-	ISeq maybeCoerceArgs(ISeq args) {
+	ISeq maybeCoerceArgs(ISeq args){
 		Class[] sig = this.target.getParameterTypes();
 		ArrayList ret = new ArrayList();
 
-		for(int i = 0; args != null; args = args.next(), i++) {
-			if (this.coerceFns.containsKey(sig[i])) {
+		for(int i = 0; args != null; args = args.next(), i++)
+			{
+			if (this.coerceFns.containsKey(sig[i]))
+				{
 				ArrayList coerceCall = new ArrayList();
 				coerceCall.add(this.coerceFns.get(sig[i]));
 				coerceCall.add(args.first());
 				ret.add(RT.seq(coerceCall));
-			}
-			else {
+				}
+			else
+				{
 				ret.add(args.first());
+				}
 			}
-		}
 
 		return RT.seq(ret);
 	}
 
-	private ISeq buildThunkDispatch(IPersistentVector params) {
-		if (isCtor()) {
+	private ISeq buildThunkDispatch(IPersistentVector params){
+		if (isCtor())
+			{
 			// ([^T arg] (new Klass arg))
 			// ([^long arg1 ^double arg2] (new Klass arg1 arg2))
 			// ([prim] (new Klass (coercefn prim)))
-			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.clazz.getName()), maybeCoerceArgs(params.seq()));
-		} else if (isStatic()) {
+			return RT.listStar(Symbol.intern("new"), Symbol.intern(this.klass.getName()), maybeCoerceArgs(params.seq()));
+			}
+		else if (isStatic())
+			{
 			// ([^T arg] (. Klass staticMethod arg))
 			// ([^long arg1 ^double arg2] (. Klass staticMethod arg1 arg2))
 			// ([prim] (. Klass staticMethod (coercefn prim)))
 			return RT.listStar(Symbol.intern("."),
-					Symbol.intern(this.clazz.getName()), Symbol.intern(this.target.getName()),
+					Symbol.intern(this.klass.getName()), Symbol.intern(this.target.getName()),
 					maybeCoerceArgs(params.seq()));
-		} else {
+			}
+		else
+			{
 			// ([^Klass self ^T arg] (. self instanceMethod arg))
 			// ([^long arg1 ^double arg2] (. self instanceMethod arg1 arg2))
 			// ([^Klass self prim] (. self instanceMethod (coercefn prim)))
 			return RT.listStar(Symbol.intern("."),
 					params.seq().first(), Symbol.intern(this.target.getName()),
 					maybeCoerceArgs(params.seq().next()));
-		}
+			}
 	}
 
 	public boolean hasJavaClass() {
@@ -2093,8 +2139,9 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	public Class getJavaClass() {
-		if (isCtor()) {
-			return this.clazz;
+		if (isCtor())
+		{
+			return this.klass;
 		}
 		else {
 			return ((java.lang.reflect.Method)this.target).getReturnType();
@@ -7536,33 +7583,39 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
-public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targetDescriptor) {
+public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targetDescriptor){
 	String[] parts = targetDescriptor.split("-", 2);
 	String targetName = parts[0];
 	String targetDisambiguation = parts.length > 1 ? parts[1] : null;
 	int declaredArity = -1;
 	List<Symbol> declaredSignature = new ArrayList<>();
 
-	if (targetDisambiguation != null) {
+	if (targetDisambiguation != null)
+		{
 		String[] disParts = targetDisambiguation.split("-");
-		for (int i = 0; i < disParts.length; i++) {
+		for (int i = 0; i < disParts.length; i++)
+			{
 			Object v = RT.readString(disParts[i]);
 
-			if (v instanceof Long) {
+			if (v instanceof Long)
+				{
 				declaredArity = ((Long) v).intValue();
-			}
-			else if (v instanceof Symbol) {
+				}
+			else if (v instanceof Symbol)
+				{
 				declaredSignature.add((Symbol) v);
-			}
-			else {
+				}
+			else
+				{
 				throw new IllegalArgumentException("Invalid method descriptor component " + parts[i] + " in " + targetDescriptor);
+				}
 			}
 		}
-	}
 
-	if (!declaredSignature.isEmpty() && declaredArity >= 0 && declaredArity != declaredSignature.size()) {
+	if (!declaredSignature.isEmpty() && declaredArity >= 0 && declaredArity != declaredSignature.size())
+		{
 		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
-	}
+		}
 
 	MethodValueExpr mve = new MethodValueExpr(null,
 			c,
@@ -7592,15 +7645,15 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targe
 			if(c != null)
 				{
 				if(Reflector.getField(c, sym.name, true) != null)
-				    {
+					{
 					return new StaticFieldExpr(lineDeref(), columnDeref(), c, sym.name, tag);
-				    }
+					}
 				else
-				    {
+					{
 					return maybeProcessMethodDescriptor(c, sym.name);
-				    }
-			    }
-		    }
+					}
+				}
+			}
 		}
 	//Var v = lookupVar(sym, false);
 //	Var v = lookupVar(sym, false);
