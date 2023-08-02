@@ -73,4 +73,4 @@
 
 (deftest syntax-quoting
   (is (= `String/toUpperCase-Locale 'java.lang.String/toUpperCase-java.util.Locale))
-  (is (= `UUID/new-long-long 'UUID/new-long-long)))
+  (is (= `UUID/new-long-long 'java.util.UUID/new-long-long)))
