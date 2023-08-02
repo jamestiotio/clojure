@@ -70,3 +70,7 @@
 (deftest primitive-hinting
   (is (instance? clojure.lang.IFn$DO String/valueOf-double))
   (is (instance? clojure.lang.IFn$LL Math/abs-long)))
+
+(deftest syntax-quoting
+  (is (= `String/toUpperCase-Locale 'java.lang.String/toUpperCase-java.util.Locale))
+  (is (= `UUID/new-long-long 'UUID/new-long-long)))

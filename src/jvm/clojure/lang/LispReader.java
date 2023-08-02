@@ -30,11 +30,7 @@ import java.lang.UnsupportedOperationException;
 import java.lang.reflect.Constructor;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -1071,8 +1067,22 @@ public static class SyntaxQuoteReader extends AFn{
 				if(maybeClass instanceof Class)
 					{
 					// Classname/foo -> package.qualified.Classname/foo
-					sym = Symbol.intern(
-							((Class)maybeClass).getName(), sym.name);
+					String resolvedClassName = ((Class)maybeClass).getName();
+					String targetDescr = sym.name;
+					String[] parts = sym.name.split("-");
+					if (parts.length > 1)
+					    {
+						for (int i=1; i<parts.length; i++)
+						    {
+							Object maybeT = Compiler.currentNS().getMapping(Symbol.intern(null, parts[i]));
+							if (maybeT != null && maybeT instanceof Class)
+								{
+								parts[i] = (((Class)maybeT).getName());
+								}
+						    }
+							targetDescr = String.join("-", parts);
+					    }
+					sym = Symbol.intern(resolvedClassName, targetDescr);
 					}
 				else
 					sym = Compiler.resolveSymbol(sym);

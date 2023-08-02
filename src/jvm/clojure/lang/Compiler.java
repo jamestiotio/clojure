@@ -1889,7 +1889,7 @@ static public class MethodValueExpr extends FnExpr {
 		super(tag);
 		this.klass = c;
 		this.declaredArity = arity;
-		this.declaredSignature = processDeclaredSignature(sig);
+		this.declaredSignature = processDeclaredSignature(this.prims, sig);
 		this.targetName = targetName;
 
 		if (isCtor()) {
@@ -1912,29 +1912,6 @@ static public class MethodValueExpr extends FnExpr {
 		return this.targetName.equals("new");
 	}
 
-	private List<Class> processDeclaredSignature(List<Symbol> sig) {
-		List<Class> tsig = new ArrayList<>();
-		for (Symbol t : sig)
-			{
-			if (prims.containsKey(t))
-				{
-				tsig.add(prims.get(t));
-				}
-			else
-				{
-				Object maybeClass = maybeResolveIn(currentNS(), t);
-
-				if (maybeClass == null)
-					{
-					ClassNotFoundException cnfe = new ClassNotFoundException(t.name);
-					Util.sneakyThrow(cnfe);
-					}
-
-				tsig.add((Class) maybeClass);
-				}
-			}
-		return tsig;
-	}
 	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName){
 		List<Executable> potentialTargets = new ArrayList<>();
 		int leastArity = Integer.MAX_VALUE;
@@ -7624,6 +7601,30 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targe
 			declaredSignature);
 
 	return mve;
+}
+
+public static List<Class> processDeclaredSignature(Map<Symbol, Class> primitives, List<Symbol> sig) {
+	List<Class> tsig = new ArrayList<>();
+	for (Symbol t : sig)
+	{
+		if (primitives != null && primitives.containsKey(t))
+		{
+			tsig.add(primitives.get(t));
+		}
+		else
+		{
+			Object maybeClass = maybeResolveIn(currentNS(), t);
+
+			if (maybeClass == null)
+			{
+				ClassNotFoundException cnfe = new ClassNotFoundException(t.name);
+				Util.sneakyThrow(cnfe);
+			}
+
+			tsig.add((Class) maybeClass);
+		}
+	}
+	return tsig;
 }
 
 	private static Expr analyzeSymbol(Symbol sym) {
