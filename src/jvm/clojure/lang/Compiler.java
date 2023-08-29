@@ -1858,49 +1858,43 @@ static class StaticMethodExpr extends MethodExpr{
 }
 
 static public class MethodValueExpr extends FnExpr {
+	static final Symbol CTOR_TARGET = Symbol.intern(null, "new");
 	private final int declaredArity;
-	private final List<Class> declaredSignature;
-	private final String targetName;
+	private final IPersistentVector declaredSignature;
+	private final Symbol targetName;
 	Class klass;
 	Executable target;
 
-	HashMap<Symbol, Class> prims = new HashMap<Symbol, Class>() {{
-		put(Symbol.intern("double"), double.class);
-		put(Symbol.intern("doubles"), double[].class);
-		put(Symbol.intern("long"), long.class);
-		put(Symbol.intern("longs"), long[].class);
-		put(Symbol.intern("int"), int.class);
-		put(Symbol.intern("ints"), int[].class);
-		put(Symbol.intern("float"), float.class);
-		put(Symbol.intern("floats"), float[].class);
-		put(Symbol.intern("char"), char.class);
-		put(Symbol.intern("chars"), char[].class);
-		put(Symbol.intern("short"), short.class);
-		put(Symbol.intern("shorts"), short[].class);
-		put(Symbol.intern("byte"), byte.class);
-		put(Symbol.intern("bytes"), byte[].class);
-		put(Symbol.intern("boolean"), boolean.class);
-		put(Symbol.intern("booleans"), boolean[].class);
+	HashMap<Class, Symbol> coerceFns = new HashMap<Class, Symbol>() {{
+		put(double.class, Symbol.intern("double"));
+		put(double[].class, Symbol.intern("doubles"));
+		put(long.class, Symbol.intern("long"));
+		put(long[].class, Symbol.intern("longs"));
+		put(int.class, Symbol.intern("int"));
+		put(int[].class, Symbol.intern("ints"));
+		put(float.class, Symbol.intern("float"));
+		put(float[].class, Symbol.intern("floats"));
+		put(char.class, Symbol.intern("char"));
+		put(char[].class, Symbol.intern("chars"));
+		put(short.class, Symbol.intern("short"));
+		put(short[].class, Symbol.intern("shorts"));
+		put(byte.class, Symbol.intern("byte"));
+		put(byte[].class, Symbol.intern("bytes"));
+		put(boolean.class, Symbol.intern("boolean"));
+		put(boolean[].class, Symbol.intern("booleans"));
 	}};
 
-	HashMap<Class, Symbol> coerceFns = new HashMap<>();
-
-	public MethodValueExpr(Object tag, Class c, String targetName, int arity, List<Symbol> sig){
+	public MethodValueExpr(Object tag, Class c, Symbol targetName, int arity, IPersistentVector sig){
 		super(tag);
 		this.klass = c;
 		this.declaredArity = arity;
-		this.declaredSignature = processDeclaredSignature(this.prims, sig);
+		this.declaredSignature = processDeclaredSignature(sig);
 		this.targetName = targetName;
 
 		if (isCtor()) {
 			this.target = findMatchingTarget(c.getConstructors(), c, this.klass.getName());
 		} else {
-			this.target = findMatchingTarget(c.getMethods(), c, targetName);
-		}
-
-		// map the primitive types to coercion functions
-		for (Map.Entry<Symbol, Class> entry : this.prims.entrySet()) {
-			this.coerceFns.put(entry.getValue(), entry.getKey());
+			this.target = findMatchingTarget(c.getMethods(), c, targetName.name);
 		}
 	}
 
@@ -1909,7 +1903,7 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	public boolean isCtor() {
-		return this.targetName.equals("new");
+		return this.targetName.equals(CTOR_TARGET);
 	}
 
 	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName){
@@ -1956,7 +1950,7 @@ static public class MethodValueExpr extends FnExpr {
 				});
 			}
 
-		if(!this.declaredSignature.isEmpty())
+		if(this.declaredSignature.count() > 0)
 			{
 			targetStream = targetStream.filter(new Predicate<Executable>() {
 				@Override
@@ -7560,71 +7554,43 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
-public static MethodValueExpr maybeProcessMethodDescriptor(Class c, String targetDescriptor){
-	String[] parts = targetDescriptor.split("-", 2);
-	String targetName = parts[0];
-	String targetDisambiguation = parts.length > 1 ? parts[1] : null;
-	int declaredArity = -1;
-	List<Symbol> declaredSignature = new ArrayList<>();
+public static MethodValueExpr maybeProcessMethodDescriptor(Class c, Symbol method, Object ats){
+	if (ats != null && !(ats instanceof IPersistentVector)) throw new IllegalArgumentException("Malformed arg-tags. Expected a vector.");
+	IPersistentVector argTags = (IPersistentVector) ats;
 
-	if (targetDisambiguation != null)
-		{
-		String[] disParts = targetDisambiguation.split("-");
-		for (int i = 0; i < disParts.length; i++)
-			{
-			Object v = RT.readString(disParts[i]);
+	int declaredArity = (argTags != null) ? argTags.count() : -1;
 
-			if (v instanceof Long)
-				{
-				declaredArity = ((Long) v).intValue();
-				}
-			else if (v instanceof Symbol)
-				{
-				declaredSignature.add((Symbol) v);
-				}
-			else
-				{
-				throw new IllegalArgumentException("Invalid method descriptor component " + parts[i] + " in " + targetDescriptor);
-				}
-			}
-		}
-
-	if (!declaredSignature.isEmpty() && declaredArity >= 0 && declaredArity != declaredSignature.size())
+	if ((argTags != null && argTags.count() > 0) && (declaredArity >= 0) && (declaredArity != argTags.count()))
 		{
 		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
 		}
 
 	MethodValueExpr mve = new MethodValueExpr(null,
 			c,
-			targetName,
-			(declaredArity == -1 && declaredSignature.size() > 0) ? declaredSignature.size() : declaredArity,
-			declaredSignature);
+			method,
+			(argTags != null && declaredArity == -1 && argTags.count() > 0) ? argTags.count() : declaredArity,
+			argTags);
 
 	return mve;
 }
 
-public static List<Class> processDeclaredSignature(Map<Symbol, Class> primitives, List<Symbol> sig) {
+public static IPersistentVector processDeclaredSignature(IPersistentVector sig) {
 	List<Class> tsig = new ArrayList<>();
-	for (Symbol t : sig)
+	for (ISeq s = RT.seq(sig); s!=null; s = s.next())
 	{
-		if (primitives != null && primitives.containsKey(t))
-		{
-			tsig.add(primitives.get(t));
-		}
-		else
-		{
-			Object maybeClass = maybeResolveIn(currentNS(), t);
+		Object t = s.first();
+		Object maybeClass = HostExpr.tagToClass(t);
 
-			if (maybeClass == null)
-			{
-				ClassNotFoundException cnfe = new ClassNotFoundException(t.name);
-				Util.sneakyThrow(cnfe);
-			}
-
-			tsig.add((Class) maybeClass);
+		if (maybeClass == null && !t.equals(Symbol.intern(null, "_")))
+		{
+			ClassNotFoundException cnfe = new ClassNotFoundException(t.toString()); // TODO fix
+			Util.sneakyThrow(cnfe);
 		}
+
+		tsig.add((Class) maybeClass);
 	}
-	return tsig;
+
+	return PersistentVector.create(tsig);
 }
 
 	private static Expr analyzeSymbol(Symbol sym) {
@@ -7651,7 +7617,8 @@ public static List<Class> processDeclaredSignature(Map<Symbol, Class> primitives
 					}
 				else
 					{
-					return maybeProcessMethodDescriptor(c, sym.name);
+					Object argTags = (sym.meta() != null) ? sym.meta().valAt(RT.ARG_TAGS_KEY) : null;
+					return maybeProcessMethodDescriptor(c, Symbol.intern(null, sym.name), argTags);
 					}
 				}
 			}
