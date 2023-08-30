@@ -1929,6 +1929,7 @@ static public class MethodValueExpr extends FnExpr {
 
 		java.util.stream.Stream<Executable> targetStream = potentialTargets.stream();
 
+		// filter arities
 		if(this.declaredArity > -1)
 			{
 			targetStream = targetStream.filter(new Predicate<Executable>() {
@@ -1958,13 +1959,16 @@ static public class MethodValueExpr extends FnExpr {
 				public boolean test(Executable t) {
 					Class[] sig = t.getParameterTypes();
 
-					for (int i = 0; i < sig.length; i++) {
-						if (declaredSignature.get(i) == null) { // ignoring
-						}
-						else if (!declaredSignature.get(i).equals(sig[i])) {
+					for (int i = 0; i < sig.length; i++)
+						{
+						if (declaredSignature.get(i) == null)
+							{ // ignoring
+							}
+						else if (!declaredSignature.get(i).equals(sig[i]))
+							{
 							return false;
+							}
 						}
-					}
 
 					return true;
 				}
