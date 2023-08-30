@@ -1860,7 +1860,7 @@ static class StaticMethodExpr extends MethodExpr{
 static public class MethodValueExpr extends FnExpr {
 	static final Symbol CTOR_TARGET = Symbol.intern(null, "new");
 	private final int declaredArity;
-	private final IPersistentVector declaredSignature;
+	private final List<Class> declaredSignature;
 	private final Symbol targetName;
 	Class klass;
 	Executable target;
@@ -1910,6 +1910,7 @@ static public class MethodValueExpr extends FnExpr {
 		List<Executable> potentialTargets = new ArrayList<>();
 		int leastArity = Integer.MAX_VALUE;
 
+		// Get only the methods with the right name
 		try
 			{
 			for (int i = 0; i < targets.length; i++)
@@ -1931,13 +1932,13 @@ static public class MethodValueExpr extends FnExpr {
 		if(this.declaredArity > -1)
 			{
 			targetStream = targetStream.filter(new Predicate<Executable>() {
-				@Override
-				public boolean test(Executable t)
-					{
-					return t.getParameterTypes().length == MethodValueExpr.this.declaredArity;
-					}
-				});
-			}
+                @Override
+                public boolean test(Executable t)
+                        {
+                        return t.getParameterTypes().length == MethodValueExpr.this.declaredArity;
+                        }
+                });
+            }
 		else
 			{
 			int finalLeastArity = leastArity;
@@ -1950,17 +1951,25 @@ static public class MethodValueExpr extends FnExpr {
 				});
 			}
 
-		if(this.declaredSignature.count() > 0)
-			{
+		// Match signatures
+		if(!this.declaredSignature.isEmpty()) {
 			targetStream = targetStream.filter(new Predicate<Executable>() {
 				@Override
-				public boolean test(Executable t)
-					{
-					List<Class<?>> expected = Arrays.asList(t.getParameterTypes());
-					return expected.equals(MethodValueExpr.this.declaredSignature);
+				public boolean test(Executable t) {
+					Class[] sig = t.getParameterTypes();
+
+					for (int i = 0; i < sig.length; i++) {
+						if (declaredSignature.get(i) == null) { // ignoring
+						}
+						else if (!declaredSignature.get(i).equals(sig[i])) {
+							return false;
+						}
 					}
-				});
-			}
+
+					return true;
+				}
+			});
+		}
 
 		List<Executable> filteredTargets = targetStream.collect(Collectors.toList());
 
@@ -7574,23 +7583,33 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, Symbol metho
 	return mve;
 }
 
-public static IPersistentVector processDeclaredSignature(IPersistentVector sig) {
+public static List<Class> processDeclaredSignature(IPersistentVector sig) {
 	List<Class> tsig = new ArrayList<>();
 	for (ISeq s = RT.seq(sig); s!=null; s = s.next())
 	{
 		Object t = s.first();
-		Object maybeClass = HostExpr.tagToClass(t);
+		Object maybeClass = null;
+		boolean isIgnoring = false;
 
-		if (maybeClass == null && !t.equals(Symbol.intern(null, "_")))
-		{
+		if (t.equals(Symbol.intern(null, "_")))
+			{
+			isIgnoring = true;
+			}
+		else
+			{
+			maybeClass = HostExpr.tagToClass(t);
+			}
+
+		if (maybeClass == null && !isIgnoring)
+			{
 			ClassNotFoundException cnfe = new ClassNotFoundException(t.toString()); // TODO fix
 			Util.sneakyThrow(cnfe);
-		}
+			}
 
 		tsig.add((Class) maybeClass);
 	}
 
-	return PersistentVector.create(tsig);
+	return tsig;
 }
 
 	private static Expr analyzeSymbol(Symbol sym) {
