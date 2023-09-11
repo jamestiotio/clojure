@@ -1012,6 +1012,23 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 		}
 	}
 
+	public static Class maybeClassFromMemberSymbol(Symbol sym) {
+		String contextPart = sym.ns;
+		String targetPart = sym.name;
+
+		// maybe Ctor.
+		if (targetPart.endsWith(".") && contextPart == null) {
+			return maybeClass(Symbol.intern(null, targetPart.substring(0, targetPart.length() - 1)), false);
+		}
+
+		// maybe .Class/method
+		if (contextPart!= null && targetPart != null && contextPart.startsWith(".")) {
+			return maybeClass(Symbol.intern(null, contextPart.substring(1)), false);
+		}
+
+		return null;
+	}
+
 	public static Class maybeClass(Object form, boolean stringOk) {
 		if(form instanceof Class)
 			return (Class) form;
@@ -1903,7 +1920,7 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	public boolean isCtor() {
-		return this.targetName.equals(CTOR_TARGET);
+		return this.targetName.name.endsWith(".");
 	}
 
 	private Executable findMatchingTarget(Executable[] targets, Class c, String targetName){
@@ -7341,8 +7358,10 @@ public static Object macroexpand1(Object x) {
 //						}
 					//(StringBuilder. "foo") => (new StringBuilder "foo")	
 					//else 
-					if(idx == sname.length() - 1)
-						return RT.listStar(NEW, Symbol.intern(sname.substring(0, idx)), form.next());
+					if(idx == sname.length() - 1) {
+						Symbol taggedSym = (Symbol) Symbol.intern(sname.substring(0, idx)).withMeta(sym.meta());
+						return RT.listStar(NEW, taggedSym, form.next());
+						}
 					}
 				}
 			}
@@ -7625,6 +7644,15 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
             {
             return new LocalBindingExpr(b, tag);
             }
+		else
+			{
+			Class c = HostExpr.maybeClassFromMemberSymbol(sym);
+			if (c != null)
+				{
+				Object argTags = (sym.meta() != null) ? sym.meta().valAt(RT.ARG_TAGS_KEY) : null;
+				return maybeProcessMethodDescriptor(c, Symbol.intern(null, sym.name), argTags);
+				}
+			}
 		}
 	else
 		{
@@ -7632,6 +7660,11 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
 			{
 			Symbol nsSym = Symbol.intern(sym.ns);
 			Class c = HostExpr.maybeClass(nsSym, false);
+
+			if (c == null) {
+				c = HostExpr.maybeClassFromMemberSymbol(sym);
+			}
+
 			if(c != null)
 				{
 				if(Reflector.getField(c, sym.name, true) != null)
