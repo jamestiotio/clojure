@@ -999,13 +999,22 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 				if(!(RT.first(call) instanceof Symbol))
 					throw new IllegalArgumentException("Malformed member expression");
 				Symbol sym = (Symbol) RT.first(call);
+				IPersistentVector argTags = (IPersistentVector) sym.meta().valAt(RT.ARG_TAGS_KEY);
 				Symbol tag = tagOf(form);
 				PersistentVector args = PersistentVector.EMPTY;
 				boolean tailPosition = inTailCall(context);
 				for(ISeq s = RT.next(call); s != null; s = s.next())
 					args = args.cons(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
 				if(c != null)
-					return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
+					{
+					if(argTags != null)
+						return new StaticMethodExpr(source, line, column, tag, argTags, c, munge(sym.name), args, tailPosition);
+					else
+						return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
+					}
+				else
+				if(argTags != null)
+					return new InstanceMethodExpr(source, line, column, tag, argTags, instance, munge(sym.name), args, tailPosition);
 				else
 					return new InstanceMethodExpr(source, line, column, tag, instance, munge(sym.name), args, tailPosition);
 				}
@@ -1476,8 +1485,14 @@ static class InstanceMethodExpr extends MethodExpr{
 	final static Method invokeInstanceMethodMethod =
 			Method.getMethod("Object invokeInstanceMethod(Object,String,Object[])");
 
-
 	public InstanceMethodExpr(String source, int line, int column, Symbol tag, Expr target,
+							  String methodName, IPersistentVector args, boolean tailPosition)
+	{
+		this(source, line, column, tag, null, target, methodName, args, tailPosition);
+	}
+
+
+	public InstanceMethodExpr(String source, int line, int column, Symbol tag, IPersistentVector argTags, Expr target,
 			String methodName, IPersistentVector args, boolean tailPosition)
 			{
 		this.source = source;
@@ -1673,6 +1688,12 @@ static class StaticMethodExpr extends MethodExpr{
     Class jc;
 
 	public StaticMethodExpr(String source, int line, int column, Symbol tag, Class c,
+							String methodName, IPersistentVector args, boolean tailPosition)
+			{
+			this(source, line, column, tag, null, c, methodName, args, tailPosition);
+			}
+
+	public StaticMethodExpr(String source, int line, int column, Symbol tag, IPersistentVector argTags, Class c,
 				String methodName, IPersistentVector args, boolean tailPosition)
 			{
 		this.c = c;
@@ -1882,7 +1903,7 @@ static public class MethodValueExpr extends FnExpr {
 	Class klass;
 	Executable target;
 
-	HashMap<Class, Symbol> coerceFns = new HashMap<Class, Symbol>() {{
+	static HashMap<Class, Symbol> coerceFns = new HashMap<Class, Symbol>() {{
 		put(double.class, Symbol.intern("double"));
 		put(double[].class, Symbol.intern("doubles"));
 		put(long.class, Symbol.intern("long"));
@@ -2859,8 +2880,11 @@ public static class NewExpr implements Expr{
 			Method.getMethod("Object invokeConstructor(Class,Object[])");
 	final static Method forNameMethod = Method.getMethod("Class classForName(String)");
 
-
 	public NewExpr(Class c, IPersistentVector args, int line, int column) {
+		this(c, null, args, line, column);
+	}
+
+	public NewExpr(Class c, IPersistentVector argTags, IPersistentVector args, int line, int column) {
 		this.args = args;
 		this.c = c;
 		Constructor[] allctors = c.getConstructors();
@@ -2949,13 +2973,19 @@ public static class NewExpr implements Expr{
 			//(new Classname args...)
 			if(form.count() < 2)
 				throw Util.runtimeException("wrong number of arguments, expecting: (new Classname args...)");
-			Class c = HostExpr.maybeClass(RT.second(form), false);
+			Object op = RT.second(form);
+			Class c = HostExpr.maybeClass(op, false);
 			if(c == null)
 				throw new IllegalArgumentException("Unable to resolve classname: " + RT.second(form));
+			IPersistentVector argTags = (op instanceof IObj) ? (IPersistentVector) ((IObj)op).meta().valAt(RT.ARG_TAGS_KEY) : null;
 			PersistentVector args = PersistentVector.EMPTY;
 			for(ISeq s = RT.next(RT.next(form)); s != null; s = s.next())
 				args = args.cons(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
-			return new NewExpr(c, args, line, column);
+
+			if(argTags != null)
+				return new NewExpr(c, argTags, args, line, column);
+			else
+				return new NewExpr(c, args, line, column);
 		}
 	}
 
@@ -7229,7 +7259,7 @@ static public IFn isInline(Object op, int arity) {
 }
 
 public static boolean namesStaticMember(Symbol sym){
-	return sym.ns != null && namespaceFor(sym) == null;
+	return sym.ns != null && namespaceFor(sym) == null && sym.ns.charAt(0) != '.';
 }
 
 public static Object preserveTag(ISeq src, Object dst) {
@@ -7240,6 +7270,16 @@ public static Object preserveTag(ISeq src, Object dst) {
 	}
 	return dst;
 }
+
+public static Object preserveArgTags(IObj memberSymbol, Object target) {
+	Object argTags = memberSymbol.meta().valAt(RT.ARG_TAGS_KEY);
+	if (argTags != null && target instanceof IObj) {
+		IPersistentMap meta = RT.meta(target);
+		return ((IObj)target).withMeta((IPersistentMap) RT.assoc(meta, RT.ARG_TAGS_KEY, argTags));
+	}
+	return target;
+}
+
 
 private static volatile Var MACRO_CHECK = null;
 private static volatile boolean MACRO_CHECK_LOADING = false;
@@ -7322,7 +7362,7 @@ public static Object macroexpand1(Object x) {
 				Symbol sym = (Symbol) op;
 				String sname = sym.name;
 				//(.substring s 2 5) => (. s substring 2 5)
-				if(sym.name.charAt(0) == '.')
+				if(sym.name.charAt(0) == '.' || (sym.ns != null && sym.ns.charAt(0) == '.'))
 					{
 					if(RT.length(form) < 2)
 						throw new IllegalArgumentException(
@@ -7341,7 +7381,7 @@ public static Object macroexpand1(Object x) {
 					Class c = HostExpr.maybeClass(target, false);
 					if(c != null)
 						{
-						Symbol meth = Symbol.intern(sym.name);
+						Symbol meth = (Symbol) preserveArgTags(sym, Symbol.intern(sym.name));
 						return preserveTag(form, RT.listStar(DOT, target, meth, form.next()));
 						}
 					}
@@ -7358,9 +7398,10 @@ public static Object macroexpand1(Object x) {
 //						}
 					//(StringBuilder. "foo") => (new StringBuilder "foo")	
 					//else 
-					if(idx == sname.length() - 1) {
+					if(idx == sname.length() - 1)
+						{
 						Symbol taggedSym = (Symbol) Symbol.intern(sname.substring(0, idx)).withMeta(sym.meta());
-						return RT.listStar(NEW, taggedSym, form.next());
+						return RT.listStar(NEW, preserveArgTags(sym, taggedSym), form.next());
 						}
 					}
 				}
