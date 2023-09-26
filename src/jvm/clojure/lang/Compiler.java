@@ -1013,12 +1013,10 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 						return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
 					}
 				else
-				if(argTags != null) {
-
-					return new InstanceMethodExpr(source, line, column, tag, argTags, instance, munge(sym.name), args, tailPosition);
-				}
-				else
-					return new InstanceMethodExpr(source, line, column, tag, instance, munge(sym.name), args, tailPosition);
+					if(argTags != null)
+						return new InstanceMethodExpr(source, line, column, tag, argTags, instance, munge(sym.name), args, tailPosition);
+					else
+						return new InstanceMethodExpr(source, line, column, tag, instance, munge(sym.name), args, tailPosition);
 				}
 		}
 	}
@@ -1028,14 +1026,16 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 		String targetPart = sym.name;
 
 		// maybe Ctor.
-		if (targetPart.endsWith(".") && contextPart == null) {
+		if (targetPart.endsWith(".") && contextPart == null)
+			{
 			return maybeClass(Symbol.intern(null, targetPart.substring(0, targetPart.length() - 1)), false);
-		}
+			}
 
 		// maybe .Class/method
-		if (contextPart!= null && targetPart != null && contextPart.startsWith(".")) {
+		if (contextPart!= null && targetPart != null && contextPart.startsWith("."))
+			{
 			return maybeClass(Symbol.intern(null, contextPart.substring(1)), false);
-		}
+			}
 
 		return null;
 	}
@@ -1496,7 +1496,7 @@ static class InstanceMethodExpr extends MethodExpr{
 
 	public InstanceMethodExpr(String source, int line, int column, Symbol tag, IPersistentVector argTags, Expr target,
 			String methodName, IPersistentVector args, boolean tailPosition)
-			{
+		{
 		this.source = source;
 		this.line = line;
 		this.column = column;
@@ -1505,55 +1505,69 @@ static class InstanceMethodExpr extends MethodExpr{
 		this.target = target;
 		this.tag = tag;
 		this.tailPosition = tailPosition;
-		if (argTags == null) {
-			if (target.hasJavaClass() && target.getJavaClass() != null) {
+		if (argTags == null)
+			{
+			if (target.hasJavaClass() && target.getJavaClass() != null)
+				{
 				List methods = Reflector.getMethods(target.getJavaClass(), args.count(), methodName, false);
-				if (methods.isEmpty()) {
+				if (methods.isEmpty())
+					{
 					method = null;
-					if (RT.booleanCast(RT.WARN_ON_REFLECTION.deref())) {
+					if (RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+						{
 						RT.errPrintWriter()
 								.format("Reflection warning, %s:%d:%d - call to method %s on %s can't be resolved (no such method).\n",
 										SOURCE_PATH.deref(), line, column, methodName, target.getJavaClass().getName());
+						}
 					}
-				} else {
+				else
+					{
 					int methodidx = 0;
-					if (methods.size() > 1) {
+					if (methods.size() > 1)
+						{
 						ArrayList<Class[]> params = new ArrayList();
 						ArrayList<Class> rets = new ArrayList();
-						for (int i = 0; i < methods.size(); i++) {
+						for (int i = 0; i < methods.size(); i++)
+							{
 							java.lang.reflect.Method m = (java.lang.reflect.Method) methods.get(i);
 							params.add(m.getParameterTypes());
 							rets.add(m.getReturnType());
-						}
+							}
 						methodidx = getMatchingParams(methodName, params, args, rets);
-					}
+						}
 					java.lang.reflect.Method m =
 							(java.lang.reflect.Method) (methodidx >= 0 ? methods.get(methodidx) : null);
-					if (m != null && !Modifier.isPublic(m.getDeclaringClass().getModifiers())) {
+					if (m != null && !Modifier.isPublic(m.getDeclaringClass().getModifiers()))
+						{
 						//public method of non-public class, try to find it in hierarchy
 						m = Reflector.getAsMethodOfPublicBase(m.getDeclaringClass(), m);
-					}
+						}
 					method = m;
-					if (method == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref())) {
+					if (method == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+						{
 						RT.errPrintWriter()
 								.format("Reflection warning, %s:%d:%d - call to method %s on %s can't be resolved (argument types: %s).\n",
 										SOURCE_PATH.deref(), line, column, methodName, target.getJavaClass().getName(), getTypeStringForArgs(args));
+						}
 					}
 				}
-			} else {
+			else
+				{
 				method = null;
-				if (RT.booleanCast(RT.WARN_ON_REFLECTION.deref())) {
+				if (RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+					{
 					RT.errPrintWriter()
 							.format("Reflection warning, %s:%d:%d - call to method %s can't be resolved (target class is unknown).\n",
 									SOURCE_PATH.deref(), line, column, methodName);
+					}
 				}
-			}
 		}
-		else {
+		else
+			{
 			Class c = target.getJavaClass();
 			this.method = (java.lang.reflect.Method) MethodValueExpr.findMatchingTarget(c.getMethods(), c, methodName, argTags);
+			}
 		}
-	}
 
 	public Object eval() {
 		try
@@ -1691,7 +1705,7 @@ static class StaticMethodExpr extends MethodExpr{
 
 	public StaticMethodExpr(String source, int line, int column, Symbol tag, IPersistentVector argTags, Class c,
 				String methodName, IPersistentVector args, boolean tailPosition)
-			{
+		{
 		this.c = c;
 		this.methodName = methodName;
 		this.args = args;
@@ -1701,39 +1715,45 @@ static class StaticMethodExpr extends MethodExpr{
 		this.tag = tag;
 		this.tailPosition = tailPosition;
 
-		if (argTags == null) {
+		if (argTags == null)
+			{
 			List methods = Reflector.getMethods(c, args.count(), methodName, true);
 			if(methods.isEmpty())
 				throw new IllegalArgumentException("No matching method " + methodName + " found taking "
 						+ args.count() + " args for " + c);
 
 			int methodidx = 0;
-			if (methods.size() > 1) {
+			if (methods.size() > 1)
+				{
 				ArrayList<Class[]> params = new ArrayList();
 				ArrayList<Class> rets = new ArrayList();
-				for (int i = 0; i < methods.size(); i++) {
+				for (int i = 0; i < methods.size(); i++)
+					{
 					java.lang.reflect.Method m = (java.lang.reflect.Method) methods.get(i);
 					params.add(m.getParameterTypes());
 					rets.add(m.getReturnType());
-				}
+					}
 				methodidx = getMatchingParams(methodName, params, args, rets);
-			}
+				}
 			method = (java.lang.reflect.Method) (methodidx >= 0 ? methods.get(methodidx) : null);
-			if (method == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref())) {
+			if (method == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+				{
 				RT.errPrintWriter()
 						.format("Reflection warning, %s:%d:%d - call to static method %s on %s can't be resolved (argument types: %s).\n",
 								SOURCE_PATH.deref(), line, column, methodName, c.getName(), getTypeStringForArgs(args));
-			}
-			if (method != null && warnOnBoxedKeyword.equals(RT.UNCHECKED_MATH.deref()) && isBoxedMath(method)) {
+				}
+			if (method != null && warnOnBoxedKeyword.equals(RT.UNCHECKED_MATH.deref()) && isBoxedMath(method))
+				{
 				RT.errPrintWriter()
 						.format("Boxed math warning, %s:%d:%d - call: %s.\n",
 								SOURCE_PATH.deref(), line, column, method.toString());
+				}
+			}
+		else
+			{
+			this.method = (java.lang.reflect.Method) MethodValueExpr.findMatchingTarget(c.getMethods(), c, methodName, argTags);
 			}
 		}
-		else {
-			this.method = (java.lang.reflect.Method) MethodValueExpr.findMatchingTarget(c.getMethods(), c, methodName, argTags);
-		}
-	}
 
 	public static boolean isBoxedMath(java.lang.reflect.Method m) {
 		Class c = m.getDeclaringClass();
@@ -1892,11 +1912,10 @@ static class StaticMethodExpr extends MethodExpr{
 	}
 }
 
-static public class MethodValueExpr extends FnExpr {
-	static final Symbol CTOR_TARGET = Symbol.intern(null, "new");
-	private final int declaredArity;
+static public class MethodValueExpr extends FnExpr
+	{
 	private final List<Class> declaredSignature;
-	private final Symbol targetName;
+	private final Symbol targetSymbol;
 	Class klass;
 	Executable target;
 
@@ -1919,32 +1938,31 @@ static public class MethodValueExpr extends FnExpr {
 		put(boolean[].class, Symbol.intern("booleans"));
 	}};
 
-	public MethodValueExpr(Object tag, Class c, Symbol targetName, int arity, IPersistentVector sig){
+	public MethodValueExpr(Object tag, Class c, Symbol targetSymbol, IPersistentVector sig)
+		{
 		super(tag);
 		this.klass = c;
-		this.declaredArity = arity;
 		this.declaredSignature = processDeclaredSignature(sig);
-		this.targetName = targetName;
+		this.targetSymbol = targetSymbol;
 
-		if (isCtor()) {
+		if (isCtor())
 			this.target = findMatchingTarget(c.getConstructors(), c, this.klass.getName(), sig);
-		} else {
-			this.target = findMatchingTarget(c.getMethods(), c, targetName.name, sig);
+		else
+			this.target = findMatchingTarget(c.getMethods(), c, targetSymbol.name, sig);
 		}
-	}
 
 	public boolean isStatic() {
 		return Modifier.isStatic(this.target.getModifiers());
 	}
 
 	public boolean isCtor() {
-		return this.targetName.name.endsWith(".");
+		return this.targetSymbol.name.endsWith(".");
 	}
 
-	static public Executable findMatchingTarget(Executable[] targets, Class c, String targetName, IPersistentVector sig){
+	static public Executable findMatchingTarget(Executable[] targets, Class c, String targetName, IPersistentVector sig) {
 		List<Executable> potentialTargets = new ArrayList<>();
 		int leastArity = Integer.MAX_VALUE;
-		int declaredArity = sig != null ? sig.count() : -1;
+		int derivedArity = sig != null ? sig.count() : -1;
 		List<Class> declaredSignature = processDeclaredSignature(sig);
 
 		// Get only the methods with the right name
@@ -1967,59 +1985,48 @@ static public class MethodValueExpr extends FnExpr {
 		java.util.stream.Stream<Executable> targetStream = potentialTargets.stream();
 
 		// filter arities
-		if(declaredArity > -1)
+		if(derivedArity > -1)
 			{
-			targetStream = targetStream.filter(new Predicate<Executable>() {
-                @Override
-                public boolean test(Executable t)
-                        {
-                        return t.getParameterTypes().length == declaredArity;
-                        }
-                });
+			targetStream = targetStream.filter(tgt -> tgt.getParameterTypes().length == derivedArity);
             }
 		else
 			{
 			int finalLeastArity = leastArity;
-			targetStream = targetStream.filter(new Predicate<Executable>() {
-				@Override
-				public boolean test(Executable t)
-					{
-					return t.getParameterCount() == finalLeastArity;
-					}
-				});
+			targetStream = targetStream.filter(tgt -> tgt.getParameterCount() == finalLeastArity);
 			}
 
 		// Match signatures
 		if(!declaredSignature.isEmpty()) {
-			targetStream = targetStream.filter(new Predicate<Executable>() {
-				@Override
-				public boolean test(Executable t) {
-					Class[] sig = t.getParameterTypes();
+			targetStream = targetStream.filter(tgt -> {
+				Class[] targetSig = tgt.getParameterTypes();
 
-					for (int i = 0; i < sig.length; i++)
-						{
-						if (declaredSignature.get(i) == null)
-							{ // ignoring
-							}
-						else if (!declaredSignature.get(i).equals(sig[i]))
-							{
-							return false;
-							}
+				for (int i = 0; i < targetSig.length; i++)
+					{
+					if (declaredSignature.get(i) == null)
+						{ // ignoring placeholders
 						}
+					else if (!declaredSignature.get(i).equals(targetSig[i]))
+						{
+						return false;
+						}
+					}
 
-					return true;
-				}
+				return true;
 			});
 		}
 
 		List<Executable> filteredTargets = targetStream.collect(Collectors.toList());
 
-		if(filteredTargets.isEmpty())  throw new IllegalArgumentException("Could not resolve method from declarator for " + targetName);
-		if(filteredTargets.size() > 1) throw new IllegalArgumentException("Ambiguous method declarator for " + targetName);
+		if(filteredTargets.isEmpty())
+			throw new IllegalArgumentException("Could not resolve " + targetName + " from arg-tags in class " + c.getName());
+
+		if(filteredTargets.size() > 1)
+			throw new IllegalArgumentException("Ambiguous arg-tags for " + targetName + " in class " + c.getName());
 
 		Executable target = filteredTargets.get(0);
 
-		if(target.isVarArgs()) throw new UnsupportedOperationException("Varargs not supported in method thunks, got " + targetName);
+		if(target.isVarArgs())
+			throw new UnsupportedOperationException("Varargs not supported for method thunks, got " + targetName);
 
 		return target;
 	}
@@ -2039,7 +2046,7 @@ static public class MethodValueExpr extends FnExpr {
 	}
 
 	private String buildThunkName(){
-		return "dot__" + this.targetName + RT.nextID();
+		return "dot__" + this.targetSymbol + RT.nextID();
 	}
 
 	private ISeq buildThunk(String name) {
@@ -2888,36 +2895,42 @@ public static class NewExpr implements Expr{
 		this.c = c;
 		Constructor[] allctors = c.getConstructors();
 
-		if (argTags == null) {
+		if (argTags == null)
+			{
 			ArrayList ctors = new ArrayList();
 			ArrayList<Class[]> params = new ArrayList();
 			ArrayList<Class> rets = new ArrayList();
-			for (int i = 0; i < allctors.length; i++) {
+			for (int i = 0; i < allctors.length; i++)
+				{
 				Constructor ctor = allctors[i];
-				if (ctor.getParameterTypes().length == args.count()) {
+				if (ctor.getParameterTypes().length == args.count())
+					{
 					ctors.add(ctor);
 					params.add(ctor.getParameterTypes());
 					rets.add(c);
+					}
 				}
-			}
 			if (ctors.isEmpty())
 				throw new IllegalArgumentException("No matching ctor found for " + c);
 
 			int ctoridx = 0;
-			if (ctors.size() > 1) {
+			if (ctors.size() > 1)
+				{
 				ctoridx = getMatchingParams(c.getName(), params, args, rets);
-			}
+				}
 
 			this.ctor = ctoridx >= 0 ? (Constructor) ctors.get(ctoridx) : null;
-			if (ctor == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref())) {
+			if (ctor == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+				{
 				RT.errPrintWriter()
 						.format("Reflection warning, %s:%d:%d - call to %s ctor can't be resolved.\n",
 								SOURCE_PATH.deref(), line, column, c.getName());
+				}
 			}
-		}
-		else {
+		else
+			{
 			this.ctor = (Constructor) MethodValueExpr.findMatchingTarget(allctors, c, c.getName(), argTags);
-		}
+			}
 	}
 
 	public Object eval() {
@@ -7363,6 +7376,7 @@ public static Object macroexpand1(Object x) {
 				Symbol sym = (Symbol) op;
 				String sname = sym.name;
 				//(.substring s 2 5) => (. s substring 2 5)
+				//(.String/substring s 2 5) => (. ^String s substring 2 5)
 				if(sym.name.charAt(0) == '.' || (sym.ns != null && sym.ns.charAt(0) == '.'))
 					{
 					if(RT.length(form) < 2)
@@ -7637,20 +7651,7 @@ public static MethodValueExpr maybeProcessMethodDescriptor(Class c, Symbol metho
 	if (ats != null && !(ats instanceof IPersistentVector)) throw new IllegalArgumentException("Malformed arg-tags. Expected a vector.");
 	IPersistentVector argTags = (IPersistentVector) ats;
 
-	int declaredArity = (argTags != null) ? argTags.count() : -1;
-
-	if ((argTags != null && argTags.count() > 0) && (declaredArity >= 0) && (declaredArity != argTags.count()))
-		{
-		throw new IllegalArgumentException("Invalid method descriptor, arity does not match signature");
-		}
-
-	MethodValueExpr mve = new MethodValueExpr(null,
-			c,
-			method,
-			(argTags != null && declaredArity == -1 && argTags.count() > 0) ? argTags.count() : declaredArity,
-			argTags);
-
-	return mve;
+	return new MethodValueExpr(null, c, method, argTags);
 }
 
 public static List<Class> processDeclaredSignature(IPersistentVector sig) {
@@ -7672,7 +7673,7 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
 
 		if (maybeClass == null && !isIgnoring)
 			{
-			ClassNotFoundException cnfe = new ClassNotFoundException(t.toString()); // TODO fix
+			ClassNotFoundException cnfe = new ClassNotFoundException(t.toString());
 			Util.sneakyThrow(cnfe);
 			}
 
@@ -7684,7 +7685,7 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
 
 	private static Expr analyzeSymbol(Symbol sym) {
 	Symbol tag = tagOf(sym);
-	if(sym.ns == null) //ns-qualified syms are always Vars
+	if(sym.ns == null) //ns-qualified syms are always Vars or member symbols
 		{
 		LocalBinding b = referenceLocal(sym);
 		if(b != null)
@@ -7693,6 +7694,7 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
             }
 		else
 			{
+			//maybe Klass. member symbol
 			Class c = HostExpr.maybeClassFromMemberSymbol(sym);
 			if (c != null)
 				{
@@ -7709,6 +7711,7 @@ public static List<Class> processDeclaredSignature(IPersistentVector sig) {
 			Class c = HostExpr.maybeClass(nsSym, false);
 
 			if (c == null) {
+				// maybe .Klass/method
 				c = HostExpr.maybeClassFromMemberSymbol(sym);
 			}
 

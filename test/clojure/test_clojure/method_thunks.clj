@@ -15,18 +15,6 @@
 
 (set! *warn-on-reflection* true)
 
-#_(deftest properly-formed-method-descriptor
-  (is (thrown? IllegalArgumentException
-               (Compiler/maybeProcessMethodDescriptor String "notAMethodThatExists")))
-  (is (thrown? IllegalArgumentException
-               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-2-Locale")))
-  (is (thrown? UnsupportedOperationException
-               (Compiler/maybeProcessMethodDescriptor Arrays "asList")))
-  (is (thrown? ClassNotFoundException
-               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-noprim")))
-  (is (thrown? ClassNotFoundException
-               (Compiler/maybeProcessMethodDescriptor String "toUpperCase-Instant"))))
-
 (deftest method-arity-selection
   (is (= '([] [] [])
          (take 3 (repeatedly Tuple/create))))
@@ -64,3 +52,11 @@
 (deftest primitive-hinting
   (is (instance? clojure.lang.IFn$DO ^[double] .String/valueOf))
   (is (instance? clojure.lang.IFn$LL ^[long] Math/abs)))
+
+(deftest invocation-positions
+  (is (= 3 (^[long] Math/abs -3)))
+  (is (= "A" (^[] .String/toUpperCase "a")))
+  (is (= "A" (.String/toUpperCase "a")))
+  (is (= "A" (^[java.util.Locale] .String/toUpperCase "a" java.util.Locale/ENGLISH)))
+  (is (= [1 2] (^[_ _] Tuple/create 1 2)))
+  (is (= (^[long long] UUID. 1 2) #uuid "00000000-0000-0001-0000-000000000002")))
