@@ -59,4 +59,12 @@
   (is (= "A" (.String/toUpperCase "a")))
   (is (= "A" (^[java.util.Locale] .String/toUpperCase "a" java.util.Locale/ENGLISH)))
   (is (= [1 2] (^[_ _] Tuple/create 1 2)))
-  (is (= (^[long long] UUID. 1 2) #uuid "00000000-0000-0001-0000-000000000002")))
+  (is (= (^[long long] UUID. 1 2) #uuid "00000000-0000-0001-0000-000000000002"))
+  (testing "array resolutions"
+     (let [lary (long-array [1 2 3 4 99 100])
+           oary (into-array [1 2 3 4 99 100])
+           sary (into-array String ["a" "b" "c"])]
+       (is (= 4 (^[longs long] Arrays/binarySearch lary (long 99))))
+       (is (= 4 (^[objects _] Arrays/binarySearch oary 99)))
+       (is (= 4 (^["[Ljava.lang.Object;" _] Arrays/binarySearch oary 99)))
+       (is (= 1 (^["[Ljava.lang.Object;" _] Arrays/binarySearch sary "b"))))))
